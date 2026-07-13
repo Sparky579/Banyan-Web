@@ -7,7 +7,7 @@ const DIRS: Point[] = [{ x: -1, y: -1 }, { x: 1, y: 1 }, { x: 0, y: -1 }, { x: 1
 export const COLORS = ["#24d873", "#ff7449", "#37d9ff", "#e766e9", "#f7da38", "#a3acbc"];
 export const KEYS = [["w", "d", "s", "a", "q", "e"], ["arrowup", "arrowright", "arrowdown", "arrowleft", ",", "."], ["t", "h", "g", "f", "r", "y"], ["i", "l", "k", "j", "u", "o"]];
 
-export type Cell = { x: number; y: number; owner: number; hp: number; root: boolean; wall: boolean; pest: boolean; fruit: number; edges: Set<string>; nearPlayer: boolean; nearRoot: boolean };
+export type Cell = { x: number; y: number; owner: number; hp: number; root: boolean; wall: boolean; pest: boolean; fruit: number; fruitEnergy: number; edges: Set<string>; nearPlayer: boolean; nearRoot: boolean };
 export type Player = { id: number; x: number; y: number; home: Point; energy: number; alive: boolean; score: number; moving: number; botAt: number };
 export type GameEvent = { kind: "fruit" | "capture" | "return" | "reinforce" | "error" | "win"; text: string; player?: number };
 
@@ -32,7 +32,7 @@ export class BanyanGame {
   reset() {
     this.cells.clear(); this.players = []; this.elapsed = 0; this.ended = false; this.winner = -1; this.events = [];
     const n = this.settings.size - 1;
-    for (let x = 0; x <= 2 * n; x++) for (let y = 0; y <= 2 * n; y++) if (this.valid(x, y)) this.cells.set(id(x, y), { x, y, owner: -1, hp: 1, root: false, wall: false, pest: false, fruit: 0, edges: new Set(), nearPlayer: false, nearRoot: false });
+    for (let x = 0; x <= 2 * n; x++) for (let y = 0; y <= 2 * n; y++) if (this.valid(x, y)) this.cells.set(id(x, y), { x, y, owner: -1, hp: 1, root: false, wall: false, pest: false, fruit: 0, fruitEnergy: 0, edges: new Set(), nearPlayer: false, nearRoot: false });
     const homes = this.homes(n, this.settings.players);
     homes.forEach((home, index) => { const c = this.cell(home.x, home.y)!; c.owner = index; c.hp = 50; c.root = true; this.players.push({ id: index, x: home.x, y: home.y, home, energy: 3, alive: true, score: 0, moving: 0, botAt: 0 }); });
     this.placeWalls(); this.recomputeNetworks();
@@ -69,7 +69,7 @@ export class BanyanGame {
       if (c.hp <= 1 && !c.root) this.clearCell(c);
       if (c.fruit > 0) c.fruit -= dt;
     }
-    if (Math.random() < .05 * dt) this.spawn("fruit"); if (Math.random() < .01 * dt) this.spawn("pest");
+    this.spawnEntities(dt);
     this.runBots();
   }
   private recomputeNetworks() {
@@ -100,15 +100,50 @@ export class BanyanGame {
     }
     this.resolveTile(p); this.recomputeNetworks(); return true;
   }
-  private capture(c: Cell, owner: number) { for (const e of c.edges) this.removeEdge(e); c.edges.clear(); c.owner = owner; c.hp = 5; c.pest = false; c.fruit = 0; }
+  private capture(c: Cell, owner: number) { for (const e of c.edges) this.removeEdge(e); c.edges.clear(); c.owner = owner; c.hp = 5; c.pest = false; c.fruit = 0; c.fruitEnergy = 0; }
   private eliminate(victim: number, killer: number) { if (victim < 0 || victim === killer) return; const p = this.players[victim]; if (!p?.alive) return; p.alive = false; const root = this.cell(p.home.x, p.home.y)!; root.root = false; root.hp = 5; this.players[killer].score++; this.events.push({ kind: "capture", text: `玩家 ${victim + 1} 的树根被攻占`, player: killer }); const alive = this.players.filter(q => q.alive); if (alive.length <= 1) { this.ended = true; this.winner = alive[0]?.id ?? killer; this.events.push({ kind: "win", text: `玩家 ${this.winner + 1} 获胜！`, player: this.winner }); } }
-  private clearCell(c: Cell) { for (const e of c.edges) this.removeEdge(e); c.edges.clear(); c.owner = -1; c.hp = 1; c.pest = false; c.fruit = 0; }
+  private clearCell(c: Cell) { for (const e of c.edges) this.removeEdge(e); c.edges.clear(); c.owner = -1; c.hp = 1; c.pest = false; c.fruit = 0; c.fruitEnergy = 0; }
   private removeEdge(e: string) { for (const c of this.cells.values()) c.edges.delete(e); }
-  private resolveTile(p: Player) { const c = this.cell(p.x, p.y)!; if (c.fruit > 0) { const gain = c.hp; p.energy += gain; c.fruit = 0; this.events.push({ kind: "fruit", text: `+${Math.floor(gain)} 创造力`, player: p.id }); } if (c.pest) { c.pest = false; this.events.push({ kind: "capture", text: "害虫已消灭", player: p.id }); } }
+  private resolveTile(p: Player) { const c = this.cell(p.x, p.y)!; if (c.fruit > 0) { const gain = c.fruitEnergy; p.energy += gain; c.fruit = 0; c.fruitEnergy = 0; this.events.push({ kind: "fruit", text: `+${Math.floor(gain)} 创造力`, player: p.id }); } if (c.pest) { c.pest = false; this.events.push({ kind: "capture", text: "害虫已消灭", player: p.id }); } }
   returnHome(playerId: number) { const p = this.players[playerId]; if (!p?.alive || (p.x === p.home.x && p.y === p.home.y)) return this.note("error", "你已经在树根了", playerId); const c = this.cell(p.x, p.y)!; this.clearCell(c); p.x = p.home.x; p.y = p.home.y; p.moving = this.settings.pace; this.events.push({ kind: "return", text: "落叶归根", player: playerId }); this.recomputeNetworks(); return true; }
   reinforce(playerId: number) { const p = this.players[playerId]; if (!p?.alive) return false; const c = this.cell(p.x, p.y)!; const amount = p.energy * .025; p.energy *= .9; c.hp += amount; for (const n of this.neighbors(c)) if (c.edges.has(edgeId(c, n))) this.cell(n.x, n.y)!.hp += amount; this.events.push({ kind: "reinforce", text: "固若金汤", player: playerId }); return true; }
-  private spawn(kind: "fruit" | "pest") { const candidates = [...this.cells.values()].filter(c => c.owner >= 0 && c.nearRoot && !c.root && !c.wall && !c.pest && c.fruit <= 0 && !this.players.some(p => p.alive && p.x === c.x && p.y === c.y)); if (!candidates.length) return; const c = candidates[(Math.random() * candidates.length) | 0]; if (kind === "fruit") c.fruit = 15; else if (this.players[c.owner].alive) c.pest = true; }
-  private runBots() { for (const p of this.players) { const mode = this.settings.bots[p.id]; if (!p.alive || mode === "human" || this.elapsed < p.botAt) continue; p.botAt = this.elapsed + (mode === "hard" ? .45 : .8); const choices = DIRS.map((_, i) => i).sort(() => Math.random() - .5); for (const dir of choices) if (this.move(p.id, dir)) break; if (p.energy > 20 && Math.random() < .18) this.reinforce(p.id); } }
+  private spawnEntities(dt: number) {
+    const pestLimit = this.settings.size - 1;
+    const pestCount = new Map<number, number>();
+    for (const c of this.cells.values()) if (c.pest && c.owner >= 0) pestCount.set(c.owner, (pestCount.get(c.owner) ?? 0) + 1);
+    for (const c of this.cells.values()) {
+      if (c.owner < 0 || !c.nearRoot || c.root || c.wall || c.pest || c.fruit > 0 || this.players.some(p => p.alive && p.x === c.x && p.y === c.y)) continue;
+      if ((pestCount.get(c.owner) ?? 0) < pestLimit && Math.random() < .01 * dt) { c.pest = true; pestCount.set(c.owner, (pestCount.get(c.owner) ?? 0) + 1); continue; }
+      if (Math.random() < .05 * dt) { c.fruit = 50 * this.settings.pace; c.fruitEnergy = c.hp; }
+    }
+  }
+  private botDirections(p: Player) {
+    const from = this.cell(p.x, p.y)!; const options: { dir: number; cell: Cell; score: number }[] = [];
+    DIRS.forEach((d, dir) => {
+      const to = this.cell(p.x + d.x, p.y + d.y); if (!to || to.wall) return;
+      if (to.owner === p.id && to.nearPlayer && !from.edges.has(edgeId(from, to))) return;
+      if (to.owner !== p.id && p.energy < to.hp) return;
+      let score = to.fruit > 0 ? 45 + to.fruitEnergy : 0;
+      if (to.pest) score += 30;
+      if (to.owner === -1) score += 22 - to.hp;
+      if (to.owner >= 0 && to.owner !== p.id) score += 60 - to.hp;
+      if (to.root && to.owner !== p.id) score += 1000;
+      if (to.owner === p.id && !to.nearPlayer) score += 18;
+      options.push({ dir, cell: to, score });
+    });
+    return options;
+  }
+  private runBots() {
+    for (const p of this.players) {
+      const mode = this.settings.bots[p.id]; if (!p.alive || mode === "human" || this.elapsed < p.botAt) continue;
+      p.botAt = this.elapsed + (mode === "hard" ? .34 : .62);
+      const options = this.botDirections(p); if (!options.length) { if (!this.cell(p.x, p.y)?.nearRoot) this.returnHome(p.id); continue; }
+      if (mode === "easy") options.sort((a, b) => a.cell.owner === p.id && b.cell.owner !== p.id ? 1 : a.cell.owner !== p.id && b.cell.owner === p.id ? -1 : a.cell.hp - b.cell.hp);
+      else options.sort((a, b) => b.score - a.score || a.cell.hp - b.cell.hp);
+      this.move(p.id, options[0].dir);
+      if (p.energy > (mode === "hard" ? 12 : 24) && Math.random() < (mode === "hard" ? .3 : .12)) this.reinforce(p.id);
+    }
+  }
   private note(kind: GameEvent["kind"], text: string, player?: number) { this.events.push({ kind, text, player }); return false; }
   consumeEvents() { const e = this.events; this.events = []; return e; }
   world(c: Point) { return { x: (c.x + c.y) / 2, y: (c.x - c.y) * SQRT3 / 2 }; }
