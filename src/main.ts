@@ -43,7 +43,7 @@ function renderShell() {
     home: `<main class="home"><div class="brand-mark"><span></span><span></span><span></span></div><h1>Core of banyan</h1><p class="subtitle">榕树之心</p><p class="tagline">在六边形枝网中生长、连接与守护你的根</p><div class="menu">${button("Start", "new", "primary")}${button("Custom", "custom")}${button("Tutorial", "tutorial")}${button("Settings", "settings")}${button("Help", "help")}</div><p class="hint">键盘 / 触屏均可操作 · 网页端复刻版</p></main>`,
     custom: customPage(), settings: settingsPage(), help: helpPage()
   };
-  app.innerHTML = `${pages[screen]}<footer>Core of Banyan · Web Edition</footer>`;
+  app.innerHTML = pages[screen];
   bindActions();
 }
 function customPage() {
