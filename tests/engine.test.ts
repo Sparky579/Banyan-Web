@@ -64,6 +64,7 @@ const thirdLesson = createTutorial(3);
 assert.equal(thirdLesson.game.cell(2, 2)!.nearRoot, false, "lesson three starts with a disconnected player branch");
 const fourthLesson = createTutorial(4);
 assert.equal(fourthLesson.game.tutorialSpawns, true, "the final tutorial lesson enables the original fruit and pest producer");
+assert.equal(fourthLesson.game.cell(6, 6)!.hp, 1000, "the opposing root stays protected until the tutorial's return-to-root step");
 
 const stressSettings: Settings = { size: 15, players: 6, obstacles: 40, pace: .333, bots: ["hard", "hard", "easy", "easy", "easy", "easy"] };
 const stressGame = new BanyanGame(stressSettings);

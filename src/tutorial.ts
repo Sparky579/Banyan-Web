@@ -26,6 +26,7 @@ function setupLevel(game: BanyanGame, level: number) {
     game.setPlayerState(0, { x: 2, y: 2, energy: 0 });
   }
   if (level === 4) {
+    game.setCellState(6, 6, { hp: 1000 });
     const enemyPath = [[6, 6], [5, 5], [4, 4], [3, 3]];
     for (let i = 1; i < enemyPath.length; i++) { const [x, y] = enemyPath[i]; game.setCellState(x, y, { owner: 1, hp: 8 + i * 7 }); game.connectCells({ x: enemyPath[i - 1][0], y: enemyPath[i - 1][1] }, { x, y }); }
     game.setPlayerState(1, { x: 3, y: 3, energy: 3 });
@@ -64,7 +65,7 @@ export function updateTutorial(state: TutorialState, game: BanyanGame): Tutorial
   if (state.level === 3 && state.stage === 2 && player.x === player.home.x && player.y === player.home.y) return message(3, 3, "非常棒！现在移动回去接上枝干，使它重新与根连通，避免枝干消亡！", true);
   if (state.level === 3 && state.stage === 3 && game.cell(2, 2)!.nearRoot) return message(3, 4, "现在树枝有点脆弱，可以按数字键 2 使用“固若金汤”，加固脚下与直接相连的枝干！", true);
   if (state.level === 3 && state.stage === 4 && game.lastReinforcedPlayer === 0) return message(3, 5, "根是你的一切能量来源。与根连通的枝干越多，创造力增长越快；只有连根的地方才会结果或生虫。", false, "下一关");
-  if (state.level === 4 && state.stage === 3 && player.x === 3 && player.y === 3 && game.players[1].x === game.players[1].home.x) return message(4, 4, "它被我们打回根了！现在去占领它的根，消灭它吧！", false, "继续");
+  if (state.level === 4 && state.stage === 3 && player.x === 3 && player.y === 3 && game.players[1].x === game.players[1].home.x) { game.setCellState(6, 6, { hp: 50 }); return message(4, 4, "它被我们打回根了！现在去占领它的根，消灭它吧！", false, "继续"); }
   if (state.level === 4 && state.stage === 5 && !game.players[1].alive) return { ...state, complete: true, inputAllowed: false, text: "恭喜！你已完成全部新手教程。" };
   return state;
 }
