@@ -17,7 +17,22 @@ let touchPointer: { id: number; x: number; y: number; player: number } | null = 
 let nextHudUpdate = 0;
 let toastTimer: number | undefined;
 const audio = new Map<string, HTMLAudioElement>();
-const sprites = Object.fromEntries(["Fruit", "Pest", "SquareRoot", "Player", "Land", "edge", "node", "empty"].map(name => { const image = new Image(); image.src = `/assets/${name === "Pest" ? "Pest.gif" : `${name}.png`}`; return [name, image]; })) as Record<string, HTMLImageElement>;
+const sprites: Record<string, CanvasImageSource> = {};
+for (const name of ["Fruit", "Pest", "SquareRoot", "Player", "Land", "edge", "node", "empty"]) {
+  const image = new Image();
+  sprites[name] = image;
+  image.addEventListener("load", () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d")!;
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    for (let i = 0; i < pixels.data.length; i += 4) if (pixels.data[i] < 8 && pixels.data[i + 1] < 8 && pixels.data[i + 2] < 8) pixels.data[i + 3] = 0;
+    context.putImageData(pixels, 0, 0);
+    sprites[name] = canvas;
+  }, { once: true });
+  image.src = `/assets/${name === "Pest" ? "Pest.gif" : `${name}.png`}`;
+}
 type Control = { joystick: boolean; up: string; down: string; left: string; right: string; lUp: string; rUp: string; lDown: string; rDown: string; back: string; reinforce: string };
 type BindingKey = Exclude<keyof Control, "joystick">;
 const defaultControls: Control[] = [
