@@ -6,7 +6,7 @@ const lessonSettings = (players: number): Settings => ({ size: 4, players, obsta
 const message = (level: number, stage: number, text: string, inputAllowed: boolean, continueLabel?: string): TutorialState => ({ level, stage, text, inputAllowed, continueLabel });
 
 export function createTutorial(level: number) {
-  const game = new BanyanGame(lessonSettings(level === 4 ? 2 : 1)); game.beginTutorial(); setupLevel(game, level); return { game, state: initialState(level) };
+  const game = new BanyanGame(lessonSettings(level === 4 ? 2 : 1)); game.beginTutorial(level === 4); setupLevel(game, level); return { game, state: initialState(level) };
 }
 
 function setupLevel(game: BanyanGame, level: number) {
