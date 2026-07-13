@@ -4,7 +4,7 @@ import { continueTutorial, createTutorial, updateTutorial, type TutorialState } 
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const SQRT3 = Math.sqrt(3);
-const defaultSettings = (): Settings => ({ size: 8, players: 2, obstacles: 10, pace: .4, bots: ["human", "human", "easy", "easy", "easy", "easy"] });
+const defaultSettings = (): Settings => ({ size: 5, players: 2, obstacles: 0, pace: 1 / 3, bots: ["human", "human", "easy", "easy", "easy", "easy"] });
 let settings = { ...defaultSettings(), bots: [...defaultSettings().bots] };
 let game: BanyanGame | null = null;
 let tutorial: TutorialState | null = null;
@@ -48,7 +48,7 @@ function renderShell() {
 }
 function customPage() {
   const bots = settings.bots.slice(0, settings.players).map((b, i) => `<label class="config-row"><span><i style="background:${COLORS[i]}"></i> 玩家 ${i + 1}</span><select data-bot="${i}">${(["human", "easy", "hard"] as BotMode[]).map(v => `<option value="${v}" ${b === v ? "selected" : ""}>${v === "human" ? "真人" : v === "easy" ? "简单人机" : "困难人机"}</option>`).join("")}</select></label>`).join("");
-  return `<main class="panel-page"><button class="back" data-action="home">← 返回</button><h2>自定义对局</h2><p>选择一场属于你的榕树之战。</p><section class="config"><label class="config-row"><span>地图半径 <b id="size-value">${settings.size}</b></span><input id="size" type="range" min="3" max="15" value="${settings.size}"></label><label class="config-row"><span>玩家人数 <b id="players-value">${settings.players}</b></span><input id="players" type="range" min="2" max="6" value="${settings.players}"></label><label class="config-row"><span>障碍物密度 <b id="obstacles-value">${settings.obstacles}%</b></span><input id="obstacles" type="range" min="0" max="40" step="10" value="${settings.obstacles}"></label><label class="config-row"><span>移动间隔</span><select id="pace"><option value=".6" ${settings.pace === .6 ? "selected" : ""}>悠闲 1Hz</option><option value=".4" ${settings.pace === .4 ? "selected" : ""}>标准 2.5Hz</option><option value=".333" ${settings.pace === .333 ? "selected" : ""}>迅捷 3Hz</option></select></label><div class="player-settings">${bots}</div></section><div class="actions">${button("开始生长", "start", "primary")}</div></main>`;
+  return `<main class="panel-page"><button class="back" data-action="home">← 返回</button><h2>自定义对局</h2><p>选择一场属于你的榕树之战。</p><section class="config"><label class="config-row"><span>地图半径 <b id="size-value">${settings.size}</b></span><input id="size" type="range" min="3" max="15" value="${settings.size}"></label><label class="config-row"><span>玩家人数 <b id="players-value">${settings.players}</b></span><input id="players" type="range" min="2" max="6" value="${settings.players}"></label><label class="config-row"><span>障碍物密度 <b id="obstacles-value">${settings.obstacles}%</b></span><input id="obstacles" type="range" min="0" max="40" step="10" value="${settings.obstacles}"></label><label class="config-row"><span>移动间隔</span><select id="pace"><option value="1" ${settings.pace === 1 ? "selected" : ""}>悠闲 1Hz</option><option value=".5" ${settings.pace === .5 ? "selected" : ""}>标准 2Hz</option><option value=".3333333333333333" ${Math.abs(settings.pace - 1 / 3) < .001 ? "selected" : ""}>迅捷 3Hz</option></select></label><div class="player-settings">${bots}</div></section><div class="actions">${button("开始生长", "start", "primary")}</div></main>`;
 }
 function settingsPage() {
   const musicValue = localStorage.getItem("banyan-music") ?? ".5", sfx = localStorage.getItem("banyan-sfx") ?? ".3";
