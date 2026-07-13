@@ -226,11 +226,29 @@ export class BanyanGame {
     }
     return to(target);
   }
+  private extremeDecision(p: Player) {
+    const paths = this.hardPaths(p), to = (target: Point) => this.hardDirectionTo(p, paths, target);
+    let rootTarget: Player | undefined, rootCost = Infinity;
+    for (const enemy of this.players) {
+      if (!enemy.alive || enemy.id === p.id) continue;
+      const path = paths.get(id(enemy.home.x, enemy.home.y));
+      if (path && path.energy < p.energy && path.energy < rootCost) { rootTarget = enemy; rootCost = path.energy; }
+    }
+    if (rootTarget) return to(rootTarget.home);
+    let coreTarget: Player | undefined, coreCost = Infinity;
+    for (const enemy of this.players) {
+      if (!enemy.alive || enemy.id === p.id) continue;
+      const path = paths.get(id(enemy.x, enemy.y));
+      if (path && path.dist <= 2 && path.energy < p.energy && path.energy < coreCost) { coreTarget = enemy; coreCost = path.energy; }
+    }
+    if (coreTarget) return to(coreTarget);
+    return this.hardDecision(p);
+  }
   private runBots() {
     for (const p of this.players) {
       const mode = this.settings.bots[p.id]; if (!p.alive || mode === "human" || this.elapsed < p.botAt) continue;
       if (mode === "hard") { p.botAt = this.elapsed + this.settings.pace * 1.05; const direction = this.hardDecision(p); if (direction < 0) this.returnHome(p.id); else this.move(p.id, direction); continue; }
-      if (mode === "extreme") { const interval = this.settings.pace * .4; p.botAt = this.elapsed + interval; const direction = this.hardDecision(p); if (direction < 0) this.returnHome(p.id); else if (this.move(p.id, direction)) { p.moving = interval; p.moveDuration = interval; } continue; }
+      if (mode === "extreme") { p.botAt = this.elapsed + this.settings.pace * 1.05; const direction = this.extremeDecision(p); if (direction < 0) this.returnHome(p.id); else this.move(p.id, direction); continue; }
       p.botAt = this.elapsed + (mode === "medium" ? .34 : .62);
       const options = this.botDirections(p); if (!options.length) { if (!this.cell(p.x, p.y)?.nearRoot) this.returnHome(p.id); continue; }
       if (mode === "easy") options.sort((a, b) => a.cell.owner === p.id && b.cell.owner !== p.id ? 1 : a.cell.owner !== p.id && b.cell.owner === p.id ? -1 : a.cell.hp - b.cell.hp);

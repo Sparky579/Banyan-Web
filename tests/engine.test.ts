@@ -53,7 +53,8 @@ assert.notDeepEqual({ x: botModesGame.players[0].x, y: botModesGame.players[0].y
 assert.notDeepEqual({ x: botModesGame.players[1].x, y: botModesGame.players[1].y }, botModesGame.players[1].home, "hard begins with the original-style path-planning AI");
 const extremeGame = new BanyanGame({ ...settings, pace: 1 / 3, bots: ["extreme", "human", "easy", "easy", "easy", "easy"] });
 extremeGame.update(.1);
-assert.notDeepEqual({ x: extremeGame.players[0].x, y: extremeGame.players[0].y }, extremeGame.players[0].home, "extreme uses the general full-board planner with its accelerated action cycle");
+assert.notDeepEqual({ x: extremeGame.players[0].x, y: extremeGame.players[0].y }, extremeGame.players[0].home, "extreme uses the general full-board planner");
+assert.equal(extremeGame.players[0].moveDuration, extremeGame.settings.pace, "extreme obeys the same movement cooldown as every other player");
 
 const firstLesson = createTutorial(1);
 assert.equal(firstLesson.game.tutorialMode, true);
