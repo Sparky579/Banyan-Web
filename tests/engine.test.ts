@@ -43,6 +43,9 @@ spawnGame.update(1 / 30);
 Math.random = random;
 assert.equal(fruitCell.pest, true, "a pest can replace a fruit on an eligible branch");
 assert.equal(fruitCell.fruit, 0, "a pest spawn removes the existing fruit");
+spawnGame.cell(2, 2)!.hp = 0;
+spawnGame.update(1 / 30);
+assert.deepEqual({ x: spawnGame.players[0].x, y: spawnGame.players[0].y }, { x: 0, y: 0 }, "a core is forced home when its current branch breaks");
 
 const firstLesson = createTutorial(1);
 assert.equal(firstLesson.game.tutorialMode, true);

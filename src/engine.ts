@@ -70,6 +70,7 @@ export class BanyanGame {
       if (c.hp <= 1 && !c.root) this.clearCell(c);
       if (c.fruit > 0) c.fruit -= dt;
     }
+    for (const player of this.players) if (player.alive && this.cell(player.x, player.y)?.owner !== player.id) this.forceHome(player.id);
     if (!this.tutorialMode) { this.spawnEntities(dt); this.runBots(); }
   }
   private recomputeNetworks() {
@@ -106,6 +107,7 @@ export class BanyanGame {
   private removeEdge(e: string) { for (const c of this.cells.values()) c.edges.delete(e); }
   private resolveTile(p: Player) { const c = this.cell(p.x, p.y)!; if (c.fruit > 0) { const gain = c.fruitEnergy; p.energy += gain; c.fruit = 0; c.fruitEnergy = 0; this.events.push({ kind: "fruit", text: `+${Math.floor(gain)} 创造力`, player: p.id }); } if (c.pest) { c.pest = false; this.events.push({ kind: "capture", text: "害虫已消灭", player: p.id }); } }
   returnHome(playerId: number) { const p = this.players[playerId]; if (!p?.alive || (p.x === p.home.x && p.y === p.home.y)) return this.note("error", "你已经在树根了", playerId); const c = this.cell(p.x, p.y)!; this.clearCell(c); p.fromX = p.x; p.fromY = p.y; p.x = p.home.x; p.y = p.home.y; p.moveDuration = this.settings.pace; p.moving = this.settings.pace; this.events.push({ kind: "return", text: "落叶归根", player: playerId }); this.recomputeNetworks(); return true; }
+  private forceHome(playerId: number) { const p = this.players[playerId]; if (!p || !p.alive) return; p.x = p.home.x; p.y = p.home.y; p.fromX = p.home.x; p.fromY = p.home.y; p.moving = 0; this.events.push({ kind: "return", text: "枝干断裂，已回到树根", player: playerId }); this.recomputeNetworks(); }
   reinforce(playerId: number) { const p = this.players[playerId]; if (!p?.alive) return false; const c = this.cell(p.x, p.y)!; const amount = p.energy * .025; p.energy *= .9; c.hp += amount; c.reinforcedAt = this.elapsed; for (const n of this.neighbors(c)) if (c.edges.has(edgeId(c, n))) { const neighbor = this.cell(n.x, n.y)!; neighbor.hp += amount; neighbor.reinforcedAt = this.elapsed; } this.lastReinforcedPlayer = playerId; this.events.push({ kind: "reinforce", text: "固若金汤", player: playerId }); return true; }
   beginTutorial() { this.tutorialMode = true; }
   setCellState(x: number, y: number, state: Partial<Pick<Cell, "owner" | "hp" | "root" | "wall" | "pest" | "fruit" | "fruitEnergy">>) { const cell = this.cell(x, y); if (cell) Object.assign(cell, state); }
