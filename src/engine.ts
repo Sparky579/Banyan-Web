@@ -26,13 +26,14 @@ export class BanyanGame {
   lastReinforcedPlayer = -1;
   private accumulator = 0;
   private readonly step = 1 / 30;
+  private lastNoticeAt = new Map<string, number>();
 
   constructor(settings: Settings) { this.settings = settings; this.reset(); }
   valid(x: number, y: number) { const n = this.settings.size - 1; return x >= 0 && y >= 0 && x <= 2 * n && y <= 2 * n && Math.abs(x - y) <= n; }
   cell(x: number, y: number) { return this.cells.get(id(x, y)); }
   neighbors(c: Point) { return DIRS.map(d => ({ x: c.x + d.x, y: c.y + d.y })).filter(p => this.valid(p.x, p.y)); }
   reset() {
-    this.cells.clear(); this.players = []; this.elapsed = 0; this.ended = false; this.winner = -1; this.events = []; this.lastReinforcedPlayer = -1;
+    this.cells.clear(); this.players = []; this.elapsed = 0; this.ended = false; this.winner = -1; this.events = []; this.lastReinforcedPlayer = -1; this.lastNoticeAt.clear();
     const n = this.settings.size - 1;
     for (let x = 0; x <= 2 * n; x++) for (let y = 0; y <= 2 * n; y++) if (this.valid(x, y)) this.cells.set(id(x, y), { x, y, owner: -1, hp: 1, root: false, wall: false, pest: false, fruit: 0, fruitEnergy: 0, reinforcedAt: -Infinity, edges: new Set(), nearPlayer: false, nearRoot: false });
     const homes = this.homes(n, this.settings.players);
@@ -153,7 +154,12 @@ export class BanyanGame {
       if (p.energy > (mode === "hard" ? 12 : 24) && Math.random() < (mode === "hard" ? .3 : .12)) this.reinforce(p.id);
     }
   }
-  private note(kind: GameEvent["kind"], text: string, player?: number) { this.events.push({ kind, text, player }); return false; }
+  private note(kind: GameEvent["kind"], text: string, player?: number) {
+    const key = `${kind}:${player ?? -1}:${text}`;
+    const last = this.lastNoticeAt.get(key) ?? -Infinity;
+    if (this.elapsed - last >= .65) { this.events.push({ kind, text, player }); this.lastNoticeAt.set(key, this.elapsed); }
+    return false;
+  }
   consumeEvents() { const e = this.events; this.events = []; return e; }
   world(c: Point) { return { x: (c.x + c.y) / 2, y: (c.x - c.y) * SQRT3 / 2 }; }
 }
