@@ -65,6 +65,22 @@ assert.equal(thirdLesson.game.cell(2, 2)!.nearRoot, false, "lesson three starts 
 const fourthLesson = createTutorial(4);
 assert.equal(fourthLesson.game.tutorialSpawns, true, "the final tutorial lesson enables the original fruit and pest producer");
 assert.equal(fourthLesson.game.cell(6, 6)!.hp, 1000, "the opposing root stays protected until the tutorial's return-to-root step");
+let fourthState = continueTutorial(fourthLesson.state, fourthLesson.game);
+assert.notEqual(fourthState, "next-level");
+if (fourthState === "next-level") throw new Error("unexpected tutorial transition");
+fourthState = continueTutorial(fourthState, fourthLesson.game);
+assert.notEqual(fourthState, "next-level");
+if (fourthState === "next-level") throw new Error("unexpected tutorial transition");
+for (let i = 0; i < 3; i++) { assert.equal(fourthLesson.game.move(0, 1), true); fourthLesson.game.update(.25); fourthLesson.game.update(.25); }
+fourthState = updateTutorial(fourthState, fourthLesson.game);
+assert.equal(fourthState.stage, 4, "returning the enemy core to its root unlocks the final root objective");
+assert.equal(fourthLesson.game.cell(6, 6)!.hp, 50);
+fourthState = continueTutorial(fourthState, fourthLesson.game);
+assert.notEqual(fourthState, "next-level");
+if (fourthState === "next-level") throw new Error("unexpected tutorial transition");
+for (let i = 0; i < 3; i++) { assert.equal(fourthLesson.game.move(0, 1), true); fourthLesson.game.update(.25); fourthLesson.game.update(.25); }
+fourthState = updateTutorial(fourthState, fourthLesson.game);
+assert.equal(fourthState.complete, true, "capturing the final root completes the full tutorial");
 
 const stressSettings: Settings = { size: 15, players: 6, obstacles: 40, pace: .333, bots: ["hard", "hard", "easy", "easy", "easy", "easy"] };
 const stressGame = new BanyanGame(stressSettings);
