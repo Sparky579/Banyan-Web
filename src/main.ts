@@ -12,6 +12,8 @@ let screen: "home" | "custom" | "settings" | "help" | "game" = "home";
 let selectedPlayer = 0;
 let last = performance.now();
 let floatingNotices: { x: number; y: number; text: string; expiresAt: number }[] = [];
+let touchDirection = -1;
+let touchPointer: { id: number; x: number; y: number; player: number } | null = null;
 const audio = new Map<string, HTMLAudioElement>();
 const sprites = Object.fromEntries(["Fruit", "Pest", "SquareRoot", "Player", "Land", "edge", "node", "empty"].map(name => { const image = new Image(); image.src = `/assets/${name === "Pest" ? "Pest.gif" : `${name}.png`}`; return [name, image]; })) as Record<string, HTMLImageElement>;
 type Control = { joystick: boolean; up: string; down: string; left: string; right: string; lUp: string; rUp: string; lDown: string; rDown: string; back: string; reinforce: string };
@@ -66,8 +68,8 @@ function renderGame() {
   renderTutorialCard();
 }
 
-function startGame(isTutorial = false) { if (isTutorial) { startTutorialLevel(1); return; } tutorial = null; floatingNotices = []; music("infinite_amethyst"); game = new BanyanGame(settings); selectedPlayer = 0; screen = "game"; renderShell(); }
-function startTutorialLevel(level: number) { const session = createTutorial(level); game = session.game; tutorial = session.state; floatingNotices = []; selectedPlayer = 0; music("infinite_amethyst"); screen = "game"; renderShell(); }
+function startGame(isTutorial = false) { if (isTutorial) { startTutorialLevel(1); return; } tutorial = null; floatingNotices = []; touchDirection = -1; touchPointer = null; music("infinite_amethyst"); game = new BanyanGame(settings); selectedPlayer = 0; screen = "game"; renderShell(); }
+function startTutorialLevel(level: number) { const session = createTutorial(level); game = session.game; tutorial = session.state; floatingNotices = []; touchDirection = -1; touchPointer = null; selectedPlayer = 0; music("infinite_amethyst"); screen = "game"; renderShell(); }
 function advanceActiveTutorial() { if (!tutorial || !game) return; const next = continueTutorial(tutorial, game); if (next === "next-level") startTutorialLevel(tutorial.level + 1); else { tutorial = next; renderTutorialCard(); } }
 function renderTutorialCard() { const card = document.querySelector<HTMLDivElement>("#tutorial-card"); if (!card || !tutorial) return; card.classList.remove("hidden"); card.innerHTML = `<p class="tutorial-kicker">新手教程 · ${tutorial.level}/4</p><p>${tutorial.text}</p>${tutorial.inputAllowed ? "<span class=\"tutorial-goal\">完成目标以继续</span>" : button(tutorial.continueLabel ?? "继续", "tutorial-next", "primary")}`; }
 function bindActions() { app.querySelectorAll<HTMLElement>("[data-action]").forEach(el => el.addEventListener("click", () => { const action = el.dataset.action!; if (action === "home") { tutorial = null; music("alpha"); setScreen("home"); } else if (action === "new") startGame(); else if (action === "start") startGame(); else if (action === "tutorial") startGame(true); else if (action === "custom" || action === "settings") setScreen(action); else if (action === "help") { if (screen === "game") openHelpModal(); else setScreen("help"); } else if (action === "pause") openPause(); else if (action === "return" && (!tutorial || tutorial.inputAllowed)) game?.returnHome(selectedPlayer); else if (action === "reinforce" && (!tutorial || tutorial.inputAllowed)) game?.reinforce(selectedPlayer); else if (action === "tutorial-next") advanceActiveTutorial(); else if (action === "reset-keys") { controls = defaultControls.map(c => ({ ...c })); localStorage.setItem("banyan-controls", JSON.stringify(controls)); renderShell(); } }));
@@ -97,6 +99,12 @@ function bindGameInputs() {
   };
   window.onkeyup = event => heldKeys.delete(event.key.toLowerCase());
   app.querySelectorAll<HTMLElement>("[data-move]").forEach(b => b.addEventListener("click", () => { if (!tutorial || tutorial.inputAllowed) game?.move(selectedPlayer, Number(b.dataset.move)); }));
+  const canvas = app.querySelector<HTMLCanvasElement>("#board");
+  const updateTouchDirection = (event: PointerEvent) => { if (!touchPointer || touchPointer.id !== event.pointerId) return; const x = event.clientX - touchPointer.x, y = event.clientY - touchPointer.y; if (Math.hypot(x, y) < 18) { touchDirection = -1; return; } const left = x < -8, right = x > 8, up = y < -8, down = y > 8; touchDirection = left && up ? 2 : right && up ? 3 : left && down ? 4 : right && down ? 5 : left ? 0 : right ? 1 : up ? 2 : 4; };
+  canvas?.addEventListener("pointerdown", event => { if (event.pointerType !== "touch" || (tutorial && !tutorial.inputAllowed)) return; touchPointer = { id: event.pointerId, x: event.clientX, y: event.clientY, player: selectedPlayer }; canvas.setPointerCapture(event.pointerId); updateTouchDirection(event); });
+  canvas?.addEventListener("pointermove", updateTouchDirection);
+  const endTouch = (event: PointerEvent) => { if (touchPointer?.id === event.pointerId) { touchPointer = null; touchDirection = -1; } };
+  canvas?.addEventListener("pointerup", endTouch); canvas?.addEventListener("pointercancel", endTouch);
 }
 function moveFromHeldKeys() {
   if (!game || (tutorial && !tutorial.inputAllowed)) return;
@@ -108,6 +116,7 @@ function moveFromHeldKeys() {
     else if (heldKeys.has(control.left)) direction = 0; else if (heldKeys.has(control.right)) direction = 1; else if (heldKeys.has(control.lUp)) direction = 2; else if (heldKeys.has(control.rUp)) direction = 3; else if (heldKeys.has(control.lDown)) direction = 4; else if (heldKeys.has(control.rDown)) direction = 5;
     if (direction >= 0) { selectedPlayer = player; game.move(player, direction); }
   }
+  if (touchDirection >= 0 && touchPointer) { selectedPlayer = touchPointer.player; game.move(touchPointer.player, touchDirection); }
 }
 function openPause() { const modal = document.querySelector<HTMLDivElement>("#modal"); if (!modal) return; if (!modal.classList.contains("hidden")) { modal.classList.add("hidden"); return; } modal.classList.remove("hidden"); modal.innerHTML = `<section><p class="eyebrow">游戏暂停</p><h2>枝干会在此刻静止</h2><div class="modal-actions">${button("继续生长", "resume", "primary")}${button("重新开始", "restart")}${button("回到主页", "quit")}</div></section>`; modal.querySelectorAll<HTMLElement>("[data-action]").forEach(b => b.addEventListener("click", () => { const a = b.dataset.action; if (a === "resume") modal.classList.add("hidden"); if (a === "restart") { game?.reset(); floatingNotices = []; modal.classList.add("hidden"); } if (a === "quit") { game = null; tutorial = null; music("alpha"); setScreen("home"); } })); }
 function openHelpModal() { const modal = document.querySelector<HTMLDivElement>("#modal"); if (!modal) return; modal.classList.remove("hidden"); modal.innerHTML = `<section><p class="eyebrow">游戏说明</p><h2>让每一根枝干都连向树根</h2><p>创造力用于攻占与加固；连根的枝干会恢复坚固性并产生果实。按回城键会放弃脚下结点，按加固键强化当前与相邻枝干。</p><div class="modal-actions">${button("返回对局", "resume", "primary")}</div></section>`; modal.querySelector<HTMLElement>("[data-action=resume]")?.addEventListener("click", () => modal.classList.add("hidden")); }
