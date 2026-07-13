@@ -5,11 +5,13 @@ export type Settings = { size: number; players: number; obstacles: number; pace:
 const SQRT3 = Math.sqrt(3);
 const DIRS: Point[] = [{ x: -1, y: -1 }, { x: 1, y: 1 }, { x: 0, y: -1 }, { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }];
 const HARD_SEEK: Point[] = [{ x: 1, y: 1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: -1 }, { x: 0, y: -1 }, { x: -1, y: 0 }];
+const REINFORCE_ACTION = 6, RETURN_ACTION = 7, WAIT_ACTION = 8;
 export const COLORS = ["#24d873", "#ff7449", "#37d9ff", "#e766e9", "#f7da38", "#a3acbc"];
 
 export type Cell = { x: number; y: number; owner: number; hp: number; root: boolean; wall: boolean; pest: boolean; fruit: number; fruitEnergy: number; reinforcedAt: number; edges: Set<string>; nearPlayer: boolean; nearRoot: boolean };
 export type Player = { id: number; x: number; y: number; fromX: number; fromY: number; home: Point; energy: number; alive: boolean; score: number; moving: number; moveDuration: number; botAt: number };
 export type GameEvent = { kind: "fruit" | "capture" | "return" | "reinforce" | "error" | "win"; text: string; player?: number };
+type MctsNode = { action: number; parent?: MctsNode; children: MctsNode[]; untried: number[]; visits: number; value: number };
 
 const id = (x: number, y: number) => `${x}:${y}`;
 const edgeId = (a: Point, b: Point) => [id(a.x, a.y), id(b.x, b.y)].sort().join("|");
@@ -172,12 +174,12 @@ export class BanyanGame {
     while (path?.prev && (path.prev.x !== p.x || path.prev.y !== p.y)) { step = path.prev; path = paths.get(id(step.x, step.y)); }
     return DIRS.findIndex(d => p.x + d.x === step.x && p.y + d.y === step.y);
   }
-  private hardNearest(paths: Map<string, { dist: number; energy: number }>, test: (cell: Cell, path: { dist: number; energy: number }) => boolean, randomTie = false) {
+  private hardNearest(paths: Map<string, { dist: number; energy: number }>, test: (cell: Cell, path: { dist: number; energy: number }) => boolean, randomTie = false, random = Math.random) {
     let target: Cell | undefined, best = Infinity;
-    for (const cell of this.cells.values()) { const path = paths.get(id(cell.x, cell.y)); if (!path || !test(cell, path)) continue; if (path.dist < best || (randomTie && path.dist === best && Math.random() < .33)) { target = cell; best = path.dist; } }
+    for (const cell of this.cells.values()) { const path = paths.get(id(cell.x, cell.y)); if (!path || !test(cell, path)) continue; if (path.dist < best || (randomTie && path.dist === best && random() < .33)) { target = cell; best = path.dist; } }
     return target;
   }
-  private hardDecision(p: Player) {
+  private hardDecision(p: Player, random = Math.random) {
     const paths = this.hardPaths(p), at = this.cell(p.x, p.y)!, home = p.home, homePath = paths.get(id(home.x, home.y));
     const to = (target?: Point) => this.hardDirectionTo(p, paths, target);
     const rootStrength = this.neighbors(home).reduce((sum, point) => { const cell = this.cell(point.x, point.y)!; return sum + (cell.nearRoot ? cell.hp : 0); }, 0);
@@ -208,47 +210,159 @@ export class BanyanGame {
       const capture = this.hardNearest(paths, (cell, path) => cell.owner !== p.id && cell.nearRoot && path.dist <= Math.floor(n / 3) && path.energy * 2 < p.energy);
       if (!connect && !capture) return -1;
       if (!connect) return to(capture);
-      if (!capture) return Math.random() < .4 ? to(connect) : -1;
+      if (!capture) return random() < .4 ? to(connect) : -1;
       const connectPath = paths.get(id(connect.x, connect.y))!, capturePath = paths.get(id(capture.x, capture.y))!;
       if (connectPath.dist < capturePath.dist) return to(connect);
       return Math.max(capture.x - home.x, capture.y - home.y) < n ? to(capture) : -1;
     }
-    if (p.energy > 20 && Math.random() < .1) this.reinforce(p.id);
+    if (p.energy > 20 && random() < .1) this.reinforce(p.id);
     let cut: Cell | undefined;
     for (const cell of this.cells.values()) { const path = paths.get(id(cell.x, cell.y)); if (path && cell.owner >= 0 && cell.owner !== p.id && cell.nearRoot && path.dist <= 4 && path.energy * 1.2 <= p.energy) cut = cell; }
-    if (cut && (Math.max(cut.x - home.x, cut.y - home.y) <= Math.floor(n / 2) || Math.random() < .4)) return to(cut);
+    if (cut && (Math.max(cut.x - home.x, cut.y - home.y) <= Math.floor(n / 2) || random() < .4)) return to(cut);
     let target = this.hardNearest(paths, (cell, path) => cell.owner === p.id && !cell.nearPlayer && path.dist <= n && p.energy > path.energy * 1.2);
-    if (!target) target = this.hardNearest(paths, (cell, path) => cell.owner === -1 && path.dist <= 2, true);
+    if (!target) target = this.hardNearest(paths, (cell, path) => cell.owner === -1 && path.dist <= 2, true, random);
     if (!target) {
       let branchTarget: Cell | undefined, degree = 0;
       for (const cell of this.cells.values()) if (cell.owner !== p.id && cell.nearRoot && cell.edges.size > degree) { branchTarget = cell; degree = cell.edges.size; }
-      target = degree >= 3 ? branchTarget : this.hardNearest(paths, cell => cell.owner === -1, true);
+      target = degree >= 3 ? branchTarget : this.hardNearest(paths, cell => cell.owner === -1, true, random);
     }
     return to(target);
   }
   private extremeDecision(p: Player) {
-    const paths = this.hardPaths(p), to = (target: Point) => this.hardDirectionTo(p, paths, target);
-    let rootTarget: Player | undefined, rootCost = Infinity;
-    for (const enemy of this.players) {
-      if (!enemy.alive || enemy.id === p.id) continue;
-      const path = paths.get(id(enemy.home.x, enemy.home.y));
-      if (path && path.energy < p.energy && path.energy < rootCost) { rootTarget = enemy; rootCost = path.energy; }
+    let seed = ((this.elapsed * 1000) | 0) ^ (p.id + 1) * 0x9e3779b1 ^ p.x * 73856093 ^ p.y * 19349663 ^ ((p.energy * 100) | 0);
+    const random = () => { seed ^= seed << 13; seed ^= seed >>> 17; seed ^= seed << 5; return (seed >>> 0) / 4294967296; };
+    const priorState = this.mctsClone(), priorPlayer = priorState.players[p.id], priorDirection = priorState.hardDecision(priorPlayer, random);
+    const priorAction = priorDirection >= 0 ? priorDirection : priorPlayer.x !== priorPlayer.home.x || priorPlayer.y !== priorPlayer.home.y ? RETURN_ACTION : WAIT_ACTION;
+    const rootActions = this.mctsActions(p.id).sort((a, b) => Number(b === priorAction) - Number(a === priorAction));
+    const root: MctsNode = { action: WAIT_ACTION, children: [], untried: rootActions, visits: 0, value: 0 };
+    if (root.untried.length === 1) return root.untried[0];
+    const cellCount = this.cells.size, iterations = cellCount <= 100 ? 16 : cellCount <= 300 ? 8 : 3, treeDepth = 2, rolloutDepth = 3;
+    for (let iteration = 0; iteration < iterations; iteration++) {
+      const simulation = this.mctsClone();
+      let node = root, depth = 0;
+      while (!simulation.ended && depth < treeDepth) {
+        if (node.untried.length) {
+          const index = Math.floor(random() * node.untried.length), action = node.untried.splice(index, 1)[0];
+          simulation.mctsRound(p.id, action, random);
+          const child: MctsNode = { action, parent: node, children: [], untried: simulation.mctsActions(p.id), visits: 0, value: 0 };
+          node.children.push(child); node = child; depth++; break;
+        }
+        if (!node.children.length) break;
+        const logVisits = Math.log(Math.max(1, node.visits));
+        node = node.children.reduce((best, child) => {
+          const score = child.value / Math.max(1, child.visits) + 1.35 * Math.sqrt(logVisits / Math.max(1, child.visits));
+          const bestScore = best.value / Math.max(1, best.visits) + 1.35 * Math.sqrt(logVisits / Math.max(1, best.visits));
+          return score > bestScore ? child : best;
+        });
+        simulation.mctsRound(p.id, node.action, random); depth++;
+      }
+      while (!simulation.ended && depth < rolloutDepth) { simulation.mctsRound(p.id, simulation.mctsPolicyAction(p.id, random), random); depth++; }
+      const reward = simulation.mctsValue(p.id);
+      for (let current: MctsNode | undefined = node; current; current = current.parent) { current.visits++; current.value += reward; }
     }
-    if (rootTarget) return to(rootTarget.home);
-    let coreTarget: Player | undefined, coreCost = Infinity;
-    for (const enemy of this.players) {
-      if (!enemy.alive || enemy.id === p.id) continue;
-      const path = paths.get(id(enemy.x, enemy.y));
-      if (path && path.dist <= 2 && path.energy < p.energy && path.energy < coreCost) { coreTarget = enemy; coreCost = path.energy; }
+    const quality = (node: MctsNode) => node.value / Math.max(1, node.visits) + (node.action === priorAction ? .22 : 0);
+    const best = root.children.sort((a, b) => quality(b) - quality(a) || b.visits - a.visits)[0];
+    return best?.action ?? this.hardDecision(p, random);
+  }
+  private mctsClone() {
+    const clone = Object.create(BanyanGame.prototype) as BanyanGame;
+    clone.settings = this.settings;
+    clone.cells = new Map([...this.cells].map(([key, cell]) => [key, { ...cell, edges: new Set(cell.edges) }]));
+    clone.players = this.players.map(player => ({ ...player, home: { ...player.home }, moving: 0 }));
+    clone.elapsed = this.elapsed; clone.ended = this.ended; clone.winner = this.winner; clone.events = [];
+    clone.tutorialMode = true; clone.tutorialSpawns = false; clone.lastReinforcedPlayer = this.lastReinforcedPlayer;
+    clone.accumulator = 0; clone.lastNoticeAt = new Map();
+    return clone;
+  }
+  private mctsActions(playerId: number) {
+    const p = this.players[playerId]; if (!p?.alive || this.ended) return [WAIT_ACTION];
+    const actions: number[] = [], from = this.cell(p.x, p.y)!;
+    DIRS.forEach((d, direction) => {
+      const to = this.cell(p.x + d.x, p.y + d.y); if (!to || to.wall) return;
+      if (to.owner === p.id && to.nearPlayer && !from.edges.has(edgeId(from, to))) return;
+      if (to.owner !== p.id && p.energy < to.hp) return;
+      if (to.owner >= 0 && to.owner !== p.id) { const defender = this.players[to.owner]; if (defender.alive && defender.x === to.x && defender.y === to.y && p.energy <= defender.energy + to.hp) return; }
+      const rival = this.players.find(other => other.id !== p.id && other.alive && other.x === to.x && other.y === to.y);
+      if (rival && p.energy <= rival.energy) return;
+      actions.push(direction);
+    });
+    if (p.x !== p.home.x || p.y !== p.home.y) actions.push(RETURN_ACTION);
+    if (p.energy >= 8 && this.elapsed - from.reinforcedAt > this.settings.pace * 2) actions.push(REINFORCE_ACTION);
+    if (!actions.length) actions.push(WAIT_ACTION);
+    return actions;
+  }
+  private mctsApply(playerId: number, action: number) {
+    const p = this.players[playerId]; if (!p?.alive) return false;
+    p.moving = 0;
+    if (action < DIRS.length) return this.move(playerId, action);
+    if (action === REINFORCE_ACTION) return this.reinforce(playerId);
+    if (action === RETURN_ACTION) return this.returnHome(playerId);
+    return true;
+  }
+  private mctsPolicyAction(playerId: number, random: () => number) {
+    const p = this.players[playerId]; if (!p?.alive) return WAIT_ACTION;
+    const at = this.cell(p.x, p.y)!, actions = this.mctsActions(playerId);
+    let best = actions[0], bestScore = -Infinity;
+    for (const action of actions) {
+      let score = random() * 3;
+      if (action < DIRS.length) {
+        const d = DIRS[action], cell = this.cell(p.x + d.x, p.y + d.y)!;
+        if (cell.owner === -1) score += 90 - cell.hp * 3;
+        else if (cell.owner === p.id) score += cell.nearRoot ? 20 : 220;
+        else score += 320 + cell.edges.size * 65 - cell.hp * 4;
+        if (cell.root && cell.owner !== p.id) score += 10000;
+        if (cell.fruit > 0) score += 180 + cell.fruitEnergy * 20;
+        if (cell.pest) score += 100;
+        const rival = this.players.find(other => other.id !== p.id && other.alive && other.x === cell.x && other.y === cell.y);
+        if (rival) score += 800 - rival.energy * 5;
+      } else if (action === RETURN_ACTION) score += at.nearRoot ? -80 : 260;
+      else if (action === REINFORCE_ACTION) score += p.energy > 25 ? 95 + at.edges.size * 15 : 15;
+      else score -= 100;
+      if (score > bestScore) { best = action; bestScore = score; }
     }
-    if (coreTarget) return to(coreTarget);
-    return this.hardDecision(p);
+    return best;
+  }
+  private mctsRound(playerId: number, action: number, random: () => number) {
+    this.mctsApply(playerId, action);
+    for (const opponent of this.players) {
+      if (!opponent.alive || opponent.id === playerId || this.ended) continue;
+      this.mctsApply(opponent.id, this.mctsPolicyAction(opponent.id, random));
+    }
+    this.mctsAdvance(this.settings.pace * 1.05);
+  }
+  private mctsAdvance(dt: number) {
+    this.elapsed += dt; this.recomputeNetworks();
+    for (const player of this.players) player.moving = 0;
+    for (const c of [...this.cells.values()]) {
+      if (c.owner < 0 || c.wall) continue; const p = this.players[c.owner];
+      if (c.nearRoot) { c.hp = Math.min(9999, c.hp + .2 * dt * (1 + p.score / 3)); if (c.nearPlayer) p.energy += .5 * dt * (1 + p.score / 3); }
+      else c.hp -= .5 * dt;
+      if (c.pest) c.hp -= .5 * dt;
+      if (c.hp <= 1 && !c.root) this.clearCell(c);
+      if (c.fruit > 0) c.fruit -= dt;
+    }
+    for (const player of this.players) if (player.alive && this.cell(player.x, player.y)?.owner !== player.id) this.forceHome(player.id);
+    this.recomputeNetworks(); this.events = [];
+  }
+  private mctsValue(playerId: number) {
+    const p = this.players[playerId]; if (!p?.alive) return -1;
+    if (this.ended) return this.winner === playerId ? 1 : -1;
+    const strength = (player: Player) => {
+      if (!player.alive) return -500;
+      let value = player.energy * 2 + player.score * 350;
+      const position = this.cell(player.x, player.y); if (!position?.nearRoot) value -= 25;
+      const root = this.cell(player.home.x, player.home.y); if (root?.root) value += 80 + Math.min(root.hp, 200) * .35;
+      for (const cell of this.cells.values()) if (cell.owner === player.id) value += cell.nearRoot ? 9 + Math.min(cell.hp, 50) * .08 : -5;
+      return value;
+    };
+    const own = strength(p), enemies = this.players.filter(player => player.id !== playerId), strongest = Math.max(...enemies.map(strength)), average = enemies.reduce((sum, player) => sum + strength(player), 0) / Math.max(1, enemies.length);
+    return Math.tanh((own - strongest * .7 - average * .3) / 180);
   }
   private runBots() {
     for (const p of this.players) {
       const mode = this.settings.bots[p.id]; if (!p.alive || mode === "human" || this.elapsed < p.botAt) continue;
       if (mode === "hard") { p.botAt = this.elapsed + this.settings.pace * 1.05; const direction = this.hardDecision(p); if (direction < 0) this.returnHome(p.id); else this.move(p.id, direction); continue; }
-      if (mode === "extreme") { p.botAt = this.elapsed + this.settings.pace * 1.05; const direction = this.extremeDecision(p); if (direction < 0) this.returnHome(p.id); else this.move(p.id, direction); continue; }
+      if (mode === "extreme") { p.botAt = this.elapsed + this.settings.pace * 1.05; this.mctsApply(p.id, this.extremeDecision(p)); continue; }
       p.botAt = this.elapsed + (mode === "medium" ? .34 : .62);
       const options = this.botDirections(p); if (!options.length) { if (!this.cell(p.x, p.y)?.nearRoot) this.returnHome(p.id); continue; }
       if (mode === "easy") options.sort((a, b) => a.cell.owner === p.id && b.cell.owner !== p.id ? 1 : a.cell.owner !== p.id && b.cell.owner === p.id ? -1 : a.cell.hp - b.cell.hp);

@@ -55,6 +55,12 @@ const extremeGame = new BanyanGame({ ...settings, pace: 1 / 3, bots: ["extreme",
 extremeGame.update(.1);
 assert.notDeepEqual({ x: extremeGame.players[0].x, y: extremeGame.players[0].y }, extremeGame.players[0].home, "extreme uses the general full-board planner");
 assert.equal(extremeGame.players[0].moveDuration, extremeGame.settings.pace, "extreme obeys the same movement cooldown as every other player");
+const mctsFinisher = new BanyanGame({ ...settings, pace: 1 / 3, bots: ["extreme", "human", "easy", "easy", "easy", "easy"] });
+mctsFinisher.setCellState(3, 3, { owner: 0, hp: 5 });
+mctsFinisher.setPlayerState(0, { x: 3, y: 3, energy: 100 });
+mctsFinisher.refresh();
+mctsFinisher.update(.1);
+assert.equal(mctsFinisher.winner, 0, "MCTS recognizes and takes an immediately winning root capture");
 
 const firstLesson = createTutorial(1);
 assert.equal(firstLesson.game.tutorialMode, true);
@@ -91,12 +97,12 @@ for (let i = 0; i < 3; i++) { assert.equal(fourthLesson.game.move(0, 1), true); 
 fourthState = updateTutorial(fourthState, fourthLesson.game);
 assert.equal(fourthState.complete, true, "capturing the final root completes the full tutorial");
 
-const stressSettings: Settings = { size: 15, players: 6, obstacles: 40, pace: .333, bots: ["hard", "hard", "easy", "easy", "easy", "easy"] };
+const stressSettings: Settings = { size: 15, players: 6, obstacles: 40, pace: .333, bots: ["extreme", "hard", "easy", "easy", "easy", "easy"] };
 const stressGame = new BanyanGame(stressSettings);
 assert.equal(stressGame.cells.size, 631, "the maximum map contains 631 cells");
 const startedAt = performance.now();
 for (let i = 0; i < 300; i++) stressGame.update(1 / 30);
 const elapsedMs = performance.now() - startedAt;
-assert.ok(elapsedMs < 1500, `the fixed-step engine should process a 10-second max-map simulation quickly (${elapsedMs.toFixed(1)}ms)`);
+assert.ok(elapsedMs < 1500, `the fixed-step engine with MCTS should process a 10-second max-map simulation quickly (${elapsedMs.toFixed(1)}ms)`);
 
 console.log(`engine rules: passed; max-map 10s simulation ${elapsedMs.toFixed(1)}ms`);
