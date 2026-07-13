@@ -1,11 +1,13 @@
 import "./style.css";
 import { BanyanGame, COLORS, type BotMode, type Settings } from "./engine";
+import { continueTutorial, createTutorial, updateTutorial, type TutorialState } from "./tutorial";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const SQRT3 = Math.sqrt(3);
 const defaultSettings = (): Settings => ({ size: 8, players: 2, obstacles: 10, pace: .4, bots: ["human", "human", "easy", "easy", "easy", "easy"] });
 let settings = { ...defaultSettings(), bots: [...defaultSettings().bots] };
 let game: BanyanGame | null = null;
+let tutorial: TutorialState | null = null;
 let screen: "home" | "custom" | "settings" | "help" | "game" = "home";
 let selectedPlayer = 0;
 let last = performance.now();
@@ -55,12 +57,16 @@ function settingsPage() {
 function helpPage() { return `<main class="panel-page help"><button class="back" data-action="home">← 返回</button><h2>游戏说明</h2><p>你是一颗榕树核心。移动会长出枝干；在自己的枝干上只能沿已有连接移动，枝网不能形成回路。</p><div class="rule-grid"><article><strong>创造力 E</strong><span>与树根相连的活枝越多，增长越快；攻占结点、加固枝干都会消耗它。</span></article><article><strong>坚固性 D</strong><span>每个结点有坚固性。连根时持续恢复，断根或被害虫啃食会不断流失。</span></article><article><strong>果实与害虫</strong><span>果实提供创造力，害虫会侵蚀枝干。走到其所在结点即可获得或消灭。</span></article><article><strong>落叶归根</strong><span>按回城键立即回到根，但会失去当前所在结点；加固会强化当前结点及相邻枝干。</span></article></div><div class="actions">${button("进入自定义对局", "custom", "primary")}</div></main>`; }
 
 function renderGame() {
-  app.innerHTML = `<div class="game-shell"><canvas id="board" aria-label="榕树之心游戏地图"></canvas><div class="topbar"><div class="game-title"><b>榕树之心</b><span>CORE OF BANYAN</span></div><div id="game-status" class="game-status"></div><div class="top-actions"><button class="icon-button" data-action="help">?</button><button class="icon-button" data-action="pause">Ⅱ</button></div></div><aside id="player-panel" class="player-panel"></aside><div id="toast-layer" class="toast-layer"></div><div class="mobile-controls"><button data-move="2">↖</button><button data-move="3">↗</button><button data-move="0">←</button><button data-move="1">→</button><button data-move="4">↙</button><button data-move="5">↘</button></div><div class="skill-controls"><button data-action="return"><small>1</small>落叶归根</button><button data-action="reinforce"><small>2</small>固若金汤</button></div><div id="modal" class="modal hidden"></div></div>`;
+  app.innerHTML = `<div class="game-shell"><canvas id="board" aria-label="榕树之心游戏地图"></canvas><div class="topbar"><div class="game-title"><b>榕树之心</b><span>CORE OF BANYAN</span></div><div id="game-status" class="game-status"></div><div class="top-actions"><button class="icon-button" data-action="help">?</button><button class="icon-button" data-action="pause">Ⅱ</button></div></div><aside id="player-panel" class="player-panel"></aside><div id="toast-layer" class="toast-layer"></div><div class="mobile-controls"><button data-move="2">↖</button><button data-move="3">↗</button><button data-move="0">←</button><button data-move="1">→</button><button data-move="4">↙</button><button data-move="5">↘</button></div><div class="skill-controls"><button data-action="return"><small>1</small>落叶归根</button><button data-action="reinforce"><small>2</small>固若金汤</button></div><div id="tutorial-card" class="tutorial-card ${tutorial ? "" : "hidden"}"></div><div id="modal" class="modal hidden"></div></div>`;
   bindActions(); bindGameInputs(); drawLoop();
+  renderTutorialCard();
 }
 
-function startGame(tutorial = false) { if (tutorial) { settings = { size: 4, players: 2, obstacles: 0, pace: .45, bots: ["human", "easy", "easy", "easy", "easy", "easy"] }; } music("infinite_amethyst"); game = new BanyanGame(settings); selectedPlayer = 0; screen = "game"; renderShell(); }
-function bindActions() { app.querySelectorAll<HTMLElement>("[data-action]").forEach(el => el.addEventListener("click", () => { const action = el.dataset.action!; if (action === "home") { music("alpha"); setScreen("home"); } else if (action === "new") startGame(); else if (action === "start") startGame(); else if (action === "tutorial") startGame(true); else if (action === "custom" || action === "settings" || action === "help") setScreen(action); else if (action === "pause") openPause(); else if (action === "return") game?.returnHome(selectedPlayer); else if (action === "reinforce") game?.reinforce(selectedPlayer); else if (action === "reset-keys") { controls = defaultControls.map(c => ({ ...c })); localStorage.setItem("banyan-controls", JSON.stringify(controls)); renderShell(); } }));
+function startGame(isTutorial = false) { if (isTutorial) { startTutorialLevel(1); return; } tutorial = null; music("infinite_amethyst"); game = new BanyanGame(settings); selectedPlayer = 0; screen = "game"; renderShell(); }
+function startTutorialLevel(level: number) { const session = createTutorial(level); game = session.game; tutorial = session.state; selectedPlayer = 0; music("infinite_amethyst"); screen = "game"; renderShell(); }
+function advanceActiveTutorial() { if (!tutorial || !game) return; const next = continueTutorial(tutorial, game); if (next === "next-level") startTutorialLevel(tutorial.level + 1); else { tutorial = next; renderTutorialCard(); } }
+function renderTutorialCard() { const card = document.querySelector<HTMLDivElement>("#tutorial-card"); if (!card || !tutorial) return; card.classList.remove("hidden"); card.innerHTML = `<p class="tutorial-kicker">新手教程 · ${tutorial.level}/4</p><p>${tutorial.text}</p>${tutorial.inputAllowed ? "<span class=\"tutorial-goal\">完成目标以继续</span>" : button(tutorial.continueLabel ?? "继续", "tutorial-next", "primary")}`; }
+function bindActions() { app.querySelectorAll<HTMLElement>("[data-action]").forEach(el => el.addEventListener("click", () => { const action = el.dataset.action!; if (action === "home") { tutorial = null; music("alpha"); setScreen("home"); } else if (action === "new") startGame(); else if (action === "start") startGame(); else if (action === "tutorial") startGame(true); else if (action === "custom" || action === "settings" || action === "help") setScreen(action); else if (action === "pause") openPause(); else if (action === "return" && (!tutorial || tutorial.inputAllowed)) game?.returnHome(selectedPlayer); else if (action === "reinforce" && (!tutorial || tutorial.inputAllowed)) game?.reinforce(selectedPlayer); else if (action === "tutorial-next") advanceActiveTutorial(); else if (action === "reset-keys") { controls = defaultControls.map(c => ({ ...c })); localStorage.setItem("banyan-controls", JSON.stringify(controls)); renderShell(); } }));
   app.querySelectorAll<HTMLButtonElement>("[data-bind]").forEach(bind => bind.addEventListener("click", () => { const [player, field] = bind.dataset.bind!.split(":"); captureBinding = { player: Number(player), field: field as keyof Control }; bind.classList.add("capturing"); bind.querySelector("kbd")!.textContent = "按键…"; }));
   if (screen === "settings") window.onkeydown = event => { if (!captureBinding) return; controls[captureBinding.player][captureBinding.field] = event.key.toLowerCase(); localStorage.setItem("banyan-controls", JSON.stringify(controls)); captureBinding = null; renderShell(); event.preventDefault(); };
   app.querySelectorAll<HTMLInputElement>("input[type=range]").forEach(input => input.addEventListener("input", () => { const key = input.id as "size" | "players" | "obstacles" | "music" | "sfx"; if (key === "music" || key === "sfx") { localStorage.setItem(`banyan-${key === "sfx" ? "sfx" : "music"}`, input.value); syncVolumes(); const output = document.querySelector(`#${key}-value`); if (output) output.textContent = `${Math.round(Number(input.value) * 100)}%`; } else { settings[key] = Number(input.value); const out = document.querySelector(`#${key}-value`); if (out) out.textContent = `${input.value}${key === "obstacles" ? "%" : ""}`; if (key === "players") { const p = document.querySelector(".player-settings"); if (p) p.innerHTML = settings.bots.slice(0, settings.players).map((b, i) => `<label class="config-row"><span><i style="background:${COLORS[i]}"></i> 玩家 ${i + 1}</span><select data-bot="${i}">${(["human", "easy", "hard"] as BotMode[]).map(v => `<option value="${v}" ${b === v ? "selected" : ""}>${v === "human" ? "真人" : v === "easy" ? "简单人机" : "困难人机"}</option>`).join("")}</select></label>`).join(""); bindBotSelects(); } } }));
@@ -73,6 +79,7 @@ function bindGameInputs() {
     if (captureBinding) { controls[captureBinding.player][captureBinding.field] = key; localStorage.setItem("banyan-controls", JSON.stringify(controls)); captureBinding = null; renderShell(); event.preventDefault(); return; }
     if (!game || screen !== "game") return;
     if (key === "escape") { openPause(); return; }
+    if (tutorial && !tutorial.inputAllowed) { if (key === " " || key === "enter") advanceActiveTutorial(); return; }
     heldKeys.add(key);
     for (let player = 0; player < game.players.length; player++) {
       const control = controls[player];
@@ -83,10 +90,10 @@ function bindGameInputs() {
     event.preventDefault();
   };
   window.onkeyup = event => heldKeys.delete(event.key.toLowerCase());
-  app.querySelectorAll<HTMLElement>("[data-move]").forEach(b => b.addEventListener("click", () => game?.move(selectedPlayer, Number(b.dataset.move))));
+  app.querySelectorAll<HTMLElement>("[data-move]").forEach(b => b.addEventListener("click", () => { if (!tutorial || tutorial.inputAllowed) game?.move(selectedPlayer, Number(b.dataset.move)); }));
 }
 function moveFromHeldKeys() {
-  if (!game) return;
+  if (!game || (tutorial && !tutorial.inputAllowed)) return;
   for (let player = 0; player < game.players.length; player++) {
     if (settings.bots[player] !== "human") continue;
     const control = controls[player], up = heldKeys.has(control.up), down = heldKeys.has(control.down), left = heldKeys.has(control.left), right = heldKeys.has(control.right);
@@ -97,7 +104,7 @@ function moveFromHeldKeys() {
 }
 function openPause() { const modal = document.querySelector<HTMLDivElement>("#modal"); if (!modal) return; modal.classList.remove("hidden"); modal.innerHTML = `<section><p class="eyebrow">游戏暂停</p><h2>枝干会在此刻静止</h2><div class="modal-actions">${button("继续生长", "resume", "primary")}${button("重新开始", "restart")}${button("回到主页", "quit")}</div></section>`; modal.querySelectorAll<HTMLElement>("[data-action]").forEach(b => b.addEventListener("click", () => { const a = b.dataset.action; if (a === "resume") modal.classList.add("hidden"); if (a === "restart") { game?.reset(); modal.classList.add("hidden"); } if (a === "quit") { game = null; setScreen("home"); } })); }
 
-function drawLoop(now = performance.now()) { if (screen !== "game" || !game) return; const delta = (now - last) / 1000; last = now; const modal = document.querySelector("#modal"); if (modal?.classList.contains("hidden")) { moveFromHeldKeys(); game.update(delta); } drawBoard(); updateHud(); requestAnimationFrame(drawLoop); }
+function drawLoop(now = performance.now()) { if (screen !== "game" || !game) return; const delta = (now - last) / 1000; last = now; const modal = document.querySelector("#modal"); if (modal?.classList.contains("hidden")) { moveFromHeldKeys(); game.update(delta); if (tutorial) { const previous = tutorial; tutorial = updateTutorial(tutorial, game); if (tutorial !== previous) renderTutorialCard(); } } drawBoard(); updateHud(); requestAnimationFrame(drawLoop); }
 function drawBoard() {
   const canvas = document.querySelector<HTMLCanvasElement>("#board")!; const rect = canvas.getBoundingClientRect(); const ratio = Math.min(devicePixelRatio, 2); const w = Math.floor(rect.width * ratio), h = Math.floor(rect.height * ratio); if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } const ctx = canvas.getContext("2d")!; ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.clearRect(0, 0, rect.width, rect.height); const g = game!; const n = g.settings.size - 1; const scale = Math.min(rect.width / (2 * n + 3), rect.height / (SQRT3 * n + 3)) * .92; const cx = rect.width / 2, cy = rect.height / 2 + 22;
   const pos = (x: number, y: number) => { const p = g.world({ x, y }); return { x: cx + (p.x - n) * scale, y: cy + p.y * scale }; };
