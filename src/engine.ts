@@ -236,7 +236,7 @@ export class BanyanGame {
     const rootActions = this.mctsActions(p.id).sort((a, b) => Number(b === priorAction) - Number(a === priorAction));
     const root: MctsNode = { action: WAIT_ACTION, children: [], untried: rootActions, visits: 0, value: 0 };
     if (root.untried.length === 1) return root.untried[0];
-    const cellCount = this.cells.size, iterations = cellCount <= 100 ? 16 : cellCount <= 300 ? 8 : 3, treeDepth = 2, rolloutDepth = 3;
+    const cellCount = this.cells.size, iterations = cellCount <= 100 ? 20 : cellCount <= 300 ? 10 : 4, treeDepth = 2, rolloutDepth = 3;
     for (let iteration = 0; iteration < iterations; iteration++) {
       const simulation = this.mctsClone();
       let node = root, depth = 0;
@@ -260,7 +260,7 @@ export class BanyanGame {
       const reward = simulation.mctsValue(p.id);
       for (let current: MctsNode | undefined = node; current; current = current.parent) { current.visits++; current.value += reward; }
     }
-    const quality = (node: MctsNode) => node.value / Math.max(1, node.visits) + (node.action === priorAction ? .22 : 0);
+    const quality = (node: MctsNode) => node.value / Math.max(1, node.visits) + (node.action === priorAction ? .16 : 0);
     const best = root.children.sort((a, b) => quality(b) - quality(a) || b.visits - a.visits)[0];
     return best?.action ?? this.hardDecision(p, random);
   }
@@ -309,14 +309,14 @@ export class BanyanGame {
         const d = DIRS[action], cell = this.cell(p.x + d.x, p.y + d.y)!;
         if (cell.owner === -1) score += 90 - cell.hp * 3;
         else if (cell.owner === p.id) score += cell.nearRoot ? 20 : 220;
-        else score += 320 + cell.edges.size * 65 - cell.hp * 4;
+        else score += 380 + cell.edges.size * 80 - cell.hp * 4;
         if (cell.root && cell.owner !== p.id) score += 10000;
         if (cell.fruit > 0) score += 180 + cell.fruitEnergy * 20;
         if (cell.pest) score += 100;
         const rival = this.players.find(other => other.id !== p.id && other.alive && other.x === cell.x && other.y === cell.y);
-        if (rival) score += 800 - rival.energy * 5;
+        if (rival) score += 1000 - rival.energy * 5;
       } else if (action === RETURN_ACTION) score += at.nearRoot ? -80 : 260;
-      else if (action === REINFORCE_ACTION) score += p.energy > 25 ? 95 + at.edges.size * 15 : 15;
+      else if (action === REINFORCE_ACTION) score += p.energy > 30 ? 80 + at.edges.size * 12 : 8;
       else score -= 100;
       if (score > bestScore) { best = action; bestScore = score; }
     }
@@ -349,7 +349,7 @@ export class BanyanGame {
     if (this.ended) return this.winner === playerId ? 1 : -1;
     const strength = (player: Player) => {
       if (!player.alive) return -500;
-      let value = player.energy * 2 + player.score * 350;
+      let value = player.energy * 2 + player.score * 450;
       const position = this.cell(player.x, player.y); if (!position?.nearRoot) value -= 25;
       const root = this.cell(player.home.x, player.home.y); if (root?.root) value += 80 + Math.min(root.hp, 200) * .35;
       for (const cell of this.cells.values()) if (cell.owner === player.id) value += cell.nearRoot ? 9 + Math.min(cell.hp, 50) * .08 : -5;
