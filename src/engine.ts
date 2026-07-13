@@ -1,9 +1,10 @@
 export type Point = { x: number; y: number };
-export type BotMode = "human" | "easy" | "hard";
+export type BotMode = "human" | "easy" | "medium" | "hard";
 export type Settings = { size: number; players: number; obstacles: number; pace: number; bots: BotMode[] };
 
 const SQRT3 = Math.sqrt(3);
 const DIRS: Point[] = [{ x: -1, y: -1 }, { x: 1, y: 1 }, { x: 0, y: -1 }, { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }];
+const HARD_SEEK: Point[] = [{ x: 1, y: 1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: -1 }, { x: 0, y: -1 }, { x: -1, y: 0 }];
 export const COLORS = ["#24d873", "#ff7449", "#37d9ff", "#e766e9", "#f7da38", "#a3acbc"];
 
 export type Cell = { x: number; y: number; owner: number; hp: number; root: boolean; wall: boolean; pest: boolean; fruit: number; fruitEnergy: number; reinforcedAt: number; edges: Set<string>; nearPlayer: boolean; nearRoot: boolean };
@@ -143,15 +144,98 @@ export class BanyanGame {
     });
     return options;
   }
+  private hardPaths(p: Player) {
+    type Path = { dist: number; energy: number; prev?: Point };
+    const paths = new Map<string, Path>();
+    const start = { x: p.x, y: p.y };
+    paths.set(id(start.x, start.y), { dist: 0, energy: 0 });
+    const queue = [start];
+    for (let index = 0; index < queue.length; index++) {
+      const from = queue[index], fromCell = this.cell(from.x, from.y)!, fromPath = paths.get(id(from.x, from.y))!;
+      for (const d of HARD_SEEK) {
+        const to = { x: from.x + d.x, y: from.y + d.y };
+        if (!this.valid(to.x, to.y)) continue;
+        const cell = this.cell(to.x, to.y)!;
+        if (cell.wall || (cell.owner === p.id && cell.nearPlayer && !fromCell.edges.has(edgeId(from, to)))) continue;
+        const defender = cell.owner >= 0 && this.players[cell.owner]?.x === to.x && this.players[cell.owner]?.y === to.y ? this.players[cell.owner].energy : 0;
+        const next = { dist: fromPath.dist + 1, energy: fromPath.energy + (cell.owner === p.id ? 0 : Math.max(cell.hp, 1)) + defender, prev: from };
+        const key = id(to.x, to.y), old = paths.get(key);
+        if (!old || next.dist < old.dist || (next.dist === old.dist && next.energy < old.energy)) { paths.set(key, next); queue.push(to); }
+      }
+    }
+    return paths;
+  }
+  private hardDirectionTo(p: Player, paths: Map<string, { dist: number; energy: number; prev?: Point }>, target?: Point) {
+    if (!target) return -1;
+    let step = target, path = paths.get(id(step.x, step.y));
+    if (!path) return -1;
+    while (path?.prev && (path.prev.x !== p.x || path.prev.y !== p.y)) { step = path.prev; path = paths.get(id(step.x, step.y)); }
+    return DIRS.findIndex(d => p.x + d.x === step.x && p.y + d.y === step.y);
+  }
+  private hardNearest(paths: Map<string, { dist: number; energy: number }>, test: (cell: Cell, path: { dist: number; energy: number }) => boolean, randomTie = false) {
+    let target: Cell | undefined, best = Infinity;
+    for (const cell of this.cells.values()) { const path = paths.get(id(cell.x, cell.y)); if (!path || !test(cell, path)) continue; if (path.dist < best || (randomTie && path.dist === best && Math.random() < .33)) { target = cell; best = path.dist; } }
+    return target;
+  }
+  private hardDecision(p: Player) {
+    const paths = this.hardPaths(p), at = this.cell(p.x, p.y)!, home = p.home, homePath = paths.get(id(home.x, home.y));
+    const to = (target?: Point) => this.hardDirectionTo(p, paths, target);
+    const rootStrength = this.neighbors(home).reduce((sum, point) => { const cell = this.cell(point.x, point.y)!; return sum + (cell.nearRoot ? cell.hp : 0); }, 0);
+    const n = this.settings.size - 1;
+    for (const enemy of this.players) {
+      if (!enemy.alive || enemy.id === p.id) continue;
+      const rootDistance = Math.abs(home.x - enemy.x) + Math.abs(home.y - enemy.y), ownDistance = Math.abs(p.x - home.x) + Math.abs(p.y - home.y);
+      if (rootDistance <= Math.floor(n / 3) * 2 && ownDistance > n && enemy.energy > rootStrength) return -1;
+      if (rootDistance <= 2 && enemy.energy > this.cell(home.x, home.y)!.hp) { if (p.x === home.x && p.y === home.y) return to(enemy); if (ownDistance <= 2) return to(home); return -1; }
+    }
+    if (p.energy > 10 && (homePath?.dist ?? Infinity) <= 1) this.reinforce(p.id);
+    for (const point of this.neighbors(at)) { const cell = this.cell(point.x, point.y)!; if (cell.owner === p.id && cell.nearRoot !== at.nearRoot) return to(point); }
+    let adjacentCut: Cell | undefined, maxDegree = 3;
+    for (const point of this.neighbors(at)) { const cell = this.cell(point.x, point.y)!; if (cell.owner >= 0 && cell.owner !== p.id && cell.nearRoot && cell.edges.size >= maxDegree && p.energy > cell.hp) { adjacentCut = cell; maxDegree = cell.edges.size; } }
+    if (adjacentCut) return to(adjacentCut);
+    let enemyRoot: Cell | undefined, lowestEnergy = Infinity;
+    for (const enemy of this.players) {
+      if (!enemy.alive || enemy.id === p.id) continue;
+      const root = this.cell(enemy.home.x, enemy.home.y)!, path = paths.get(id(root.x, root.y)); if (!path) continue;
+      const needed = enemy.energy + path.energy;
+      if (Math.max(p.x - root.x, p.y - root.y) <= Math.floor(n / 2) && p.energy > needed) return to(root);
+      if (((!at.nearRoot && p.energy > needed * 1.5) || (at.nearRoot && p.energy > needed)) && path.energy <= lowestEnergy) { lowestEnergy = path.energy; enemyRoot = root; }
+    }
+    if (enemyRoot) return to(enemyRoot);
+    if (!at.nearRoot) {
+      const connectLimit = p.energy < 5 ? 1 : Math.floor(n / 3) * 2;
+      const connect = this.hardNearest(paths, (cell, path) => cell.owner === p.id && cell.nearRoot && path.dist < connectLimit && path.energy * 1.2 < p.energy);
+      const capture = this.hardNearest(paths, (cell, path) => cell.owner !== p.id && cell.nearRoot && path.dist <= Math.floor(n / 3) && path.energy * 2 < p.energy);
+      if (!connect && !capture) return -1;
+      if (!connect) return to(capture);
+      if (!capture) return Math.random() < .4 ? to(connect) : -1;
+      const connectPath = paths.get(id(connect.x, connect.y))!, capturePath = paths.get(id(capture.x, capture.y))!;
+      if (connectPath.dist < capturePath.dist) return to(connect);
+      return Math.max(capture.x - home.x, capture.y - home.y) < n ? to(capture) : -1;
+    }
+    if (p.energy > 20 && Math.random() < .1) this.reinforce(p.id);
+    let cut: Cell | undefined;
+    for (const cell of this.cells.values()) { const path = paths.get(id(cell.x, cell.y)); if (path && cell.owner >= 0 && cell.owner !== p.id && cell.nearRoot && path.dist <= 4 && path.energy * 1.2 <= p.energy) cut = cell; }
+    if (cut && (Math.max(cut.x - home.x, cut.y - home.y) <= Math.floor(n / 2) || Math.random() < .4)) return to(cut);
+    let target = this.hardNearest(paths, (cell, path) => cell.owner === p.id && !cell.nearPlayer && path.dist <= n && p.energy > path.energy * 1.2);
+    if (!target) target = this.hardNearest(paths, (cell, path) => cell.owner === -1 && path.dist <= 2, true);
+    if (!target) {
+      let branchTarget: Cell | undefined, degree = 0;
+      for (const cell of this.cells.values()) if (cell.owner !== p.id && cell.nearRoot && cell.edges.size > degree) { branchTarget = cell; degree = cell.edges.size; }
+      target = degree >= 3 ? branchTarget : this.hardNearest(paths, cell => cell.owner === -1, true);
+    }
+    return to(target);
+  }
   private runBots() {
     for (const p of this.players) {
       const mode = this.settings.bots[p.id]; if (!p.alive || mode === "human" || this.elapsed < p.botAt) continue;
-      p.botAt = this.elapsed + (mode === "hard" ? .34 : .62);
+      if (mode === "hard") { p.botAt = this.elapsed + this.settings.pace * 1.05; const direction = this.hardDecision(p); if (direction < 0) this.returnHome(p.id); else this.move(p.id, direction); continue; }
+      p.botAt = this.elapsed + (mode === "medium" ? .34 : .62);
       const options = this.botDirections(p); if (!options.length) { if (!this.cell(p.x, p.y)?.nearRoot) this.returnHome(p.id); continue; }
       if (mode === "easy") options.sort((a, b) => a.cell.owner === p.id && b.cell.owner !== p.id ? 1 : a.cell.owner !== p.id && b.cell.owner === p.id ? -1 : a.cell.hp - b.cell.hp);
       else options.sort((a, b) => b.score - a.score || a.cell.hp - b.cell.hp);
       this.move(p.id, options[0].dir);
-      if (p.energy > (mode === "hard" ? 12 : 24) && Math.random() < (mode === "hard" ? .3 : .12)) this.reinforce(p.id);
+      if (p.energy > (mode === "medium" ? 12 : 24) && Math.random() < (mode === "medium" ? .3 : .12)) this.reinforce(p.id);
     }
   }
   private note(kind: GameEvent["kind"], text: string, player?: number) {

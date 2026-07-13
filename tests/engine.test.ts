@@ -47,6 +47,11 @@ spawnGame.cell(2, 2)!.hp = 0;
 spawnGame.update(1 / 30);
 assert.deepEqual({ x: spawnGame.players[0].x, y: spawnGame.players[0].y }, { x: 0, y: 0 }, "a core is forced home when its current branch breaks");
 
+const botModesGame = new BanyanGame({ ...settings, pace: 1 / 3, bots: ["medium", "hard", "easy", "easy", "easy", "easy"] });
+botModesGame.update(.1);
+assert.notDeepEqual({ x: botModesGame.players[0].x, y: botModesGame.players[0].y }, botModesGame.players[0].home, "medium keeps the previous greedy hard-AI movement");
+assert.notDeepEqual({ x: botModesGame.players[1].x, y: botModesGame.players[1].y }, botModesGame.players[1].home, "hard begins with the original-style path-planning AI");
+
 const firstLesson = createTutorial(1);
 assert.equal(firstLesson.game.tutorialMode, true);
 assert.equal(firstLesson.state.inputAllowed, true);
