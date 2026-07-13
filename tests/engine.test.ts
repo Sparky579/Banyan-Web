@@ -30,6 +30,20 @@ const energyBeforeReinforce = game.players[0].energy;
 assert.equal(game.reinforce(0), true);
 assert.ok(game.players[0].energy < energyBeforeReinforce, "reinforcement consumes ten percent of current energy");
 
+const spawnGame = new BanyanGame(settings);
+assert.equal(spawnGame.move(0, 1), true);
+spawnGame.update(.1);
+assert.equal(spawnGame.move(0, 1), true);
+const fruitCell = spawnGame.cell(1, 1)!;
+fruitCell.fruit = 10;
+fruitCell.fruitEnergy = 5;
+const random = Math.random;
+Math.random = () => 0;
+spawnGame.update(1 / 30);
+Math.random = random;
+assert.equal(fruitCell.pest, true, "a pest can replace a fruit on an eligible branch");
+assert.equal(fruitCell.fruit, 0, "a pest spawn removes the existing fruit");
+
 const firstLesson = createTutorial(1);
 assert.equal(firstLesson.game.tutorialMode, true);
 assert.equal(firstLesson.state.inputAllowed, true);

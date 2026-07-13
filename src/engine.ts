@@ -117,9 +117,9 @@ export class BanyanGame {
     const pestCount = new Map<number, number>();
     for (const c of this.cells.values()) if (c.pest && c.owner >= 0) pestCount.set(c.owner, (pestCount.get(c.owner) ?? 0) + 1);
     for (const c of this.cells.values()) {
-      if (c.owner < 0 || !c.nearRoot || c.root || c.wall || c.pest || c.fruit > 0 || this.players.some(p => p.alive && p.x === c.x && p.y === c.y)) continue;
-      if ((pestCount.get(c.owner) ?? 0) < pestLimit && Math.random() < .01 * dt) { c.pest = true; pestCount.set(c.owner, (pestCount.get(c.owner) ?? 0) + 1); continue; }
-      if (Math.random() < .05 * dt) { c.fruit = 50 * this.settings.pace; c.fruitEnergy = c.hp; }
+      if (c.owner < 0 || !c.nearRoot || c.root || c.wall || c.pest || this.players.some(p => p.alive && p.x === c.x && p.y === c.y)) continue;
+      if ((pestCount.get(c.owner) ?? 0) < pestLimit && Math.random() < .01 * dt) { c.pest = true; c.fruit = 0; c.fruitEnergy = 0; pestCount.set(c.owner, (pestCount.get(c.owner) ?? 0) + 1); continue; }
+      if (c.fruit <= 0 && Math.random() < .05 * dt) { c.fruit = 50 * this.settings.pace; c.fruitEnergy = c.hp; }
     }
   }
   private botDirections(p: Player) {
