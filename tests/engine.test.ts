@@ -46,4 +46,12 @@ assert.equal(secondLesson.game.cell(3, 2)!.pest, true, "lesson two places a pest
 const thirdLesson = createTutorial(3);
 assert.equal(thirdLesson.game.cell(2, 2)!.nearRoot, false, "lesson three starts with a disconnected player branch");
 
-console.log("engine rules: passed");
+const stressSettings: Settings = { size: 15, players: 6, obstacles: 40, pace: .333, bots: ["hard", "hard", "easy", "easy", "easy", "easy"] };
+const stressGame = new BanyanGame(stressSettings);
+assert.equal(stressGame.cells.size, 631, "the maximum map contains 631 cells");
+const startedAt = performance.now();
+for (let i = 0; i < 300; i++) stressGame.update(1 / 30);
+const elapsedMs = performance.now() - startedAt;
+assert.ok(elapsedMs < 1500, `the fixed-step engine should process a 10-second max-map simulation quickly (${elapsedMs.toFixed(1)}ms)`);
+
+console.log(`engine rules: passed; max-map 10s simulation ${elapsedMs.toFixed(1)}ms`);
