@@ -1,5 +1,5 @@
 export type Point = { x: number; y: number };
-export type BotMode = "human" | "easy" | "medium" | "hard";
+export type BotMode = "human" | "easy" | "medium" | "hard" | "extreme";
 export type Settings = { size: number; players: number; obstacles: number; pace: number; bots: BotMode[] };
 
 const SQRT3 = Math.sqrt(3);
@@ -230,6 +230,7 @@ export class BanyanGame {
     for (const p of this.players) {
       const mode = this.settings.bots[p.id]; if (!p.alive || mode === "human" || this.elapsed < p.botAt) continue;
       if (mode === "hard") { p.botAt = this.elapsed + this.settings.pace * 1.05; const direction = this.hardDecision(p); if (direction < 0) this.returnHome(p.id); else this.move(p.id, direction); continue; }
+      if (mode === "extreme") { const interval = this.settings.pace * .4; p.botAt = this.elapsed + interval; const direction = this.hardDecision(p); if (direction < 0) this.returnHome(p.id); else if (this.move(p.id, direction)) { p.moving = interval; p.moveDuration = interval; } continue; }
       p.botAt = this.elapsed + (mode === "medium" ? .34 : .62);
       const options = this.botDirections(p); if (!options.length) { if (!this.cell(p.x, p.y)?.nearRoot) this.returnHome(p.id); continue; }
       if (mode === "easy") options.sort((a, b) => a.cell.owner === p.id && b.cell.owner !== p.id ? 1 : a.cell.owner !== p.id && b.cell.owner === p.id ? -1 : a.cell.hp - b.cell.hp);
