@@ -5,7 +5,6 @@ export type Settings = { size: number; players: number; obstacles: number; pace:
 const SQRT3 = Math.sqrt(3);
 const DIRS: Point[] = [{ x: -1, y: -1 }, { x: 1, y: 1 }, { x: 0, y: -1 }, { x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }];
 export const COLORS = ["#24d873", "#ff7449", "#37d9ff", "#e766e9", "#f7da38", "#a3acbc"];
-export const KEYS = [["w", "d", "s", "a", "q", "e"], ["arrowup", "arrowright", "arrowdown", "arrowleft", ",", "."], ["t", "h", "g", "f", "r", "y"], ["i", "l", "k", "j", "u", "o"]];
 
 export type Cell = { x: number; y: number; owner: number; hp: number; root: boolean; wall: boolean; pest: boolean; fruit: number; fruitEnergy: number; reinforcedAt: number; edges: Set<string>; nearPlayer: boolean; nearRoot: boolean };
 export type Player = { id: number; x: number; y: number; fromX: number; fromY: number; home: Point; energy: number; alive: boolean; score: number; moving: number; moveDuration: number; botAt: number };
