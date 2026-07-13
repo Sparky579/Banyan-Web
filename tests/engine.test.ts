@@ -14,6 +14,8 @@ assert.equal(game.move(0, 1), true, "a player can claim a neighboring neutral ce
 assert.equal(game.cell(1, 1)?.owner, 0);
 assert.equal(game.cell(1, 1)?.hp, 5);
 assert.ok(game.players[0].energy < 3, "capturing spends creation energy");
+assert.deepEqual({ x: game.players[0].fromX, y: game.players[0].fromY }, { x: 0, y: 0 }, "the previous position is retained for smooth visual interpolation");
+assert.equal(game.players[0].moving, settings.pace);
 
 game.update(.1);
 assert.equal(game.move(0, 3), true, "a player can extend the branch after its movement interval");
