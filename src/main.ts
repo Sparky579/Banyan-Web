@@ -1,5 +1,5 @@
 import "./style.css";
-import { BanyanGame, COLORS, KEYS, type BotMode, type Settings } from "./engine";
+import { BanyanGame, COLORS, type BotMode, type Settings } from "./engine";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const SQRT3 = Math.sqrt(3);
@@ -11,8 +11,24 @@ let selectedPlayer = 0;
 let last = performance.now();
 const audio = new Map<string, HTMLAudioElement>();
 const sprites = Object.fromEntries(["Fruit", "Pest", "SquareRoot", "Player", "Land", "edge", "node"].map(name => { const image = new Image(); image.src = `/assets/${name === "Pest" ? "Pest.gif" : `${name}.png`}`; return [name, image]; })) as Record<string, HTMLImageElement>;
+type Control = { up: string; down: string; left: string; right: string; back: string; reinforce: string };
+const defaultControls: Control[] = [
+  { up: "w", down: "s", left: "a", right: "d", back: "1", reinforce: "2" },
+  { up: "arrowup", down: "arrowdown", left: "arrowleft", right: "arrowright", back: ",", reinforce: "." },
+  { up: "t", down: "g", left: "f", right: "h", back: "4", reinforce: "5" },
+  { up: "i", down: "k", left: "j", right: "l", back: "7", reinforce: "8" },
+  { up: "", down: "", left: "", right: "", back: "", reinforce: "" },
+  { up: "", down: "", left: "", right: "", back: "", reinforce: "" }
+];
+function loadControls(): Control[] { try { const saved = JSON.parse(localStorage.getItem("banyan-controls") ?? "null"); if (Array.isArray(saved) && saved.length === 6) return saved; } catch { /* ignore malformed local data */ } return defaultControls.map(c => ({ ...c })); }
+let controls = loadControls();
+const heldKeys = new Set<string>();
+let captureBinding: { player: number; field: keyof Control } | null = null;
 
 function sound(name: string) { const path: Record<string, string> = { fruit: "fruit_gain", capture: "capture_root", return: "fast_return", reinforce: "reinforce", win: "end_game", error: "forced_return" }; const file = path[name]; if (!file) return; let a = audio.get(file); if (!a) { a = new Audio(`/assets/${file}.ogg`); a.volume = Number(localStorage.getItem("banyan-sfx") ?? .3); audio.set(file, a); } a.currentTime = 0; a.play().catch(() => undefined); }
+function music(track: "alpha" | "infinite_amethyst") { let a = audio.get(track); if (!a) { a = new Audio(`/assets/${track}.ogg`); a.loop = true; audio.set(track, a); } a.volume = Number(localStorage.getItem("banyan-music") ?? .5); a.play().catch(() => undefined); for (const [name, other] of audio) if ((name === "alpha" || name === "infinite_amethyst") && name !== track) other.pause(); }
+function syncVolumes() { for (const [name, track] of audio) track.volume = Number(localStorage.getItem(`banyan-${name === "alpha" || name === "infinite_amethyst" ? "music" : "sfx"}`) ?? (name === "alpha" || name === "infinite_amethyst" ? .5 : .3)); }
+const keyLabel = (key: string) => ({ arrowup: "↑", arrowdown: "↓", arrowleft: "←", arrowright: "→", "": "—" }[key] ?? key.toUpperCase());
 
 function setScreen(next: typeof screen) { screen = next; renderShell(); }
 function button(text: string, action: string, variant = "") { return `<button class="button ${variant}" data-action="${action}">${text}</button>`; }
@@ -30,7 +46,12 @@ function customPage() {
   const bots = settings.bots.slice(0, settings.players).map((b, i) => `<label class="config-row"><span><i style="background:${COLORS[i]}"></i> 玩家 ${i + 1}</span><select data-bot="${i}">${(["human", "easy", "hard"] as BotMode[]).map(v => `<option value="${v}" ${b === v ? "selected" : ""}>${v === "human" ? "真人" : v === "easy" ? "简单人机" : "困难人机"}</option>`).join("")}</select></label>`).join("");
   return `<main class="panel-page"><button class="back" data-action="home">← 返回</button><h2>自定义对局</h2><p>选择一场属于你的榕树之战。</p><section class="config"><label class="config-row"><span>地图半径 <b id="size-value">${settings.size}</b></span><input id="size" type="range" min="3" max="15" value="${settings.size}"></label><label class="config-row"><span>玩家人数 <b id="players-value">${settings.players}</b></span><input id="players" type="range" min="2" max="6" value="${settings.players}"></label><label class="config-row"><span>障碍物密度 <b id="obstacles-value">${settings.obstacles}%</b></span><input id="obstacles" type="range" min="0" max="40" step="10" value="${settings.obstacles}"></label><label class="config-row"><span>移动间隔</span><select id="pace"><option value=".6">悠闲 1Hz</option><option value=".4" selected>标准 2.5Hz</option><option value=".333">迅捷 3Hz</option></select></label><div class="player-settings">${bots}</div></section><div class="actions">${button("开始生长", "start", "primary")}</div></main>`;
 }
-function settingsPage() { const music = localStorage.getItem("banyan-music") ?? ".5", sfx = localStorage.getItem("banyan-sfx") ?? ".3"; return `<main class="panel-page"><button class="back" data-action="home">← 返回</button><h2>设置</h2><p>声音与控制偏好会保存在本机。</p><section class="config"><label class="config-row"><span>音乐音量 <b id="music-value">${Math.round(Number(music) * 100)}%</b></span><input id="music" type="range" min="0" max="1" step=".05" value="${music}"></label><label class="config-row"><span>音效音量 <b id="sfx-value">${Math.round(Number(sfx) * 100)}%</b></span><input id="sfx" type="range" min="0" max="1" step=".05" value="${sfx}"></label></section><section class="controls"><h3>默认键位</h3><div><b>玩家 1</b><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> · <kbd>1</kbd> 回城 · <kbd>2</kbd> 加固</div><div><b>玩家 2</b><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> · <kbd>,</kbd> 回城 · <kbd>.</kbd> 加固</div></section></main>`; }
+function settingsPage() {
+  const musicValue = localStorage.getItem("banyan-music") ?? ".5", sfx = localStorage.getItem("banyan-sfx") ?? ".3";
+  const fields: { field: keyof Control; label: string }[] = [{ field: "up", label: "上" }, { field: "down", label: "下" }, { field: "left", label: "左" }, { field: "right", label: "右" }, { field: "back", label: "回城" }, { field: "reinforce", label: "加固" }];
+  const players = controls.map((control, player) => `<article class="keyset"><strong><i style="background:${COLORS[player]}"></i> 玩家 ${player + 1}</strong><div>${fields.map(({ field, label }) => `<button class="keybind" data-bind="${player}:${field}" title="点击后按下新按键"><small>${label}</small><kbd>${keyLabel(control[field])}</kbd></button>`).join("")}</div></article>`).join("");
+  return `<main class="panel-page settings-page"><button class="back" data-action="home">← 返回</button><h2>设置</h2><p>音量与键位会立即保存到本机。移动采用原版虚拟摇杆：按住上下、左右组合进入六个方向。</p><section class="config"><label class="config-row"><span>音乐音量 <b id="music-value">${Math.round(Number(musicValue) * 100)}%</b></span><input id="music" type="range" min="0" max="1" step=".05" value="${musicValue}"></label><label class="config-row"><span>音效音量 <b id="sfx-value">${Math.round(Number(sfx) * 100)}%</b></span><input id="sfx" type="range" min="0" max="1" step=".05" value="${sfx}"></label></section><section class="controls"><div class="controls-heading"><h3>键位设置</h3>${button("恢复默认", "reset-keys")}</div>${players}</section></main>`;
+}
 function helpPage() { return `<main class="panel-page help"><button class="back" data-action="home">← 返回</button><h2>游戏说明</h2><p>你是一颗榕树核心。移动会长出枝干；在自己的枝干上只能沿已有连接移动，枝网不能形成回路。</p><div class="rule-grid"><article><strong>创造力 E</strong><span>与树根相连的活枝越多，增长越快；攻占结点、加固枝干都会消耗它。</span></article><article><strong>坚固性 D</strong><span>每个结点有坚固性。连根时持续恢复，断根或被害虫啃食会不断流失。</span></article><article><strong>果实与害虫</strong><span>果实提供创造力，害虫会侵蚀枝干。走到其所在结点即可获得或消灭。</span></article><article><strong>落叶归根</strong><span>按回城键立即回到根，但会失去当前所在结点；加固会强化当前结点及相邻枝干。</span></article></div><div class="actions">${button("进入自定义对局", "custom", "primary")}</div></main>`; }
 
 function renderGame() {
@@ -38,18 +59,45 @@ function renderGame() {
   bindActions(); bindGameInputs(); drawLoop();
 }
 
-function startGame(tutorial = false) { if (tutorial) { settings = { size: 4, players: 2, obstacles: 0, pace: .45, bots: ["human", "easy", "easy", "easy", "easy", "easy"] }; } game = new BanyanGame(settings); selectedPlayer = 0; screen = "game"; renderShell(); }
-function bindActions() { app.querySelectorAll<HTMLElement>("[data-action]").forEach(el => el.addEventListener("click", () => { const action = el.dataset.action!; if (action === "home") setScreen("home"); else if (action === "new") startGame(); else if (action === "start") startGame(); else if (action === "tutorial") startGame(true); else if (action === "custom" || action === "settings" || action === "help") setScreen(action); else if (action === "pause") openPause(); else if (action === "return") game?.returnHome(selectedPlayer); else if (action === "reinforce") game?.reinforce(selectedPlayer); }));
-  app.querySelectorAll<HTMLInputElement>("input[type=range]").forEach(input => input.addEventListener("input", () => { const key = input.id as "size" | "players" | "obstacles" | "music" | "sfx"; if (key === "music" || key === "sfx") { localStorage.setItem(`banyan-${key === "sfx" ? "sfx" : "music"}`, input.value); const output = document.querySelector(`#${key}-value`); if (output) output.textContent = `${Math.round(Number(input.value) * 100)}%`; } else { settings[key] = Number(input.value); const out = document.querySelector(`#${key}-value`); if (out) out.textContent = `${input.value}${key === "obstacles" ? "%" : ""}`; if (key === "players") { const p = document.querySelector(".player-settings"); if (p) p.innerHTML = settings.bots.slice(0, settings.players).map((b, i) => `<label class="config-row"><span><i style="background:${COLORS[i]}"></i> 玩家 ${i + 1}</span><select data-bot="${i}">${(["human", "easy", "hard"] as BotMode[]).map(v => `<option value="${v}" ${b === v ? "selected" : ""}>${v === "human" ? "真人" : v === "easy" ? "简单人机" : "困难人机"}</option>`).join("")}</select></label>`).join(""); bindBotSelects(); } } }));
+function startGame(tutorial = false) { if (tutorial) { settings = { size: 4, players: 2, obstacles: 0, pace: .45, bots: ["human", "easy", "easy", "easy", "easy", "easy"] }; } music("infinite_amethyst"); game = new BanyanGame(settings); selectedPlayer = 0; screen = "game"; renderShell(); }
+function bindActions() { app.querySelectorAll<HTMLElement>("[data-action]").forEach(el => el.addEventListener("click", () => { const action = el.dataset.action!; if (action === "home") { music("alpha"); setScreen("home"); } else if (action === "new") startGame(); else if (action === "start") startGame(); else if (action === "tutorial") startGame(true); else if (action === "custom" || action === "settings" || action === "help") setScreen(action); else if (action === "pause") openPause(); else if (action === "return") game?.returnHome(selectedPlayer); else if (action === "reinforce") game?.reinforce(selectedPlayer); else if (action === "reset-keys") { controls = defaultControls.map(c => ({ ...c })); localStorage.setItem("banyan-controls", JSON.stringify(controls)); renderShell(); } }));
+  app.querySelectorAll<HTMLButtonElement>("[data-bind]").forEach(bind => bind.addEventListener("click", () => { const [player, field] = bind.dataset.bind!.split(":"); captureBinding = { player: Number(player), field: field as keyof Control }; bind.classList.add("capturing"); bind.querySelector("kbd")!.textContent = "按键…"; }));
+  if (screen === "settings") window.onkeydown = event => { if (!captureBinding) return; controls[captureBinding.player][captureBinding.field] = event.key.toLowerCase(); localStorage.setItem("banyan-controls", JSON.stringify(controls)); captureBinding = null; renderShell(); event.preventDefault(); };
+  app.querySelectorAll<HTMLInputElement>("input[type=range]").forEach(input => input.addEventListener("input", () => { const key = input.id as "size" | "players" | "obstacles" | "music" | "sfx"; if (key === "music" || key === "sfx") { localStorage.setItem(`banyan-${key === "sfx" ? "sfx" : "music"}`, input.value); syncVolumes(); const output = document.querySelector(`#${key}-value`); if (output) output.textContent = `${Math.round(Number(input.value) * 100)}%`; } else { settings[key] = Number(input.value); const out = document.querySelector(`#${key}-value`); if (out) out.textContent = `${input.value}${key === "obstacles" ? "%" : ""}`; if (key === "players") { const p = document.querySelector(".player-settings"); if (p) p.innerHTML = settings.bots.slice(0, settings.players).map((b, i) => `<label class="config-row"><span><i style="background:${COLORS[i]}"></i> 玩家 ${i + 1}</span><select data-bot="${i}">${(["human", "easy", "hard"] as BotMode[]).map(v => `<option value="${v}" ${b === v ? "selected" : ""}>${v === "human" ? "真人" : v === "easy" ? "简单人机" : "困难人机"}</option>`).join("")}</select></label>`).join(""); bindBotSelects(); } } }));
   document.querySelector<HTMLSelectElement>("#pace")?.addEventListener("change", e => { settings.pace = Number((e.target as HTMLSelectElement).value); }); bindBotSelects();
 }
 function bindBotSelects() { app.querySelectorAll<HTMLSelectElement>("[data-bot]").forEach(s => s.addEventListener("change", () => { settings.bots[Number(s.dataset.bot)] = s.value as BotMode; })); }
-function bindGameInputs() { window.onkeydown = e => { if (!game || screen !== "game") return; const key = e.key.toLowerCase(); if (key === "escape") { openPause(); return; } if (key === "1") game.returnHome(selectedPlayer); if (key === "2") game.reinforce(selectedPlayer); for (let player = 0; player < Math.min(4, game.players.length); player++) { const direction = KEYS[player].indexOf(key); if (direction >= 0 && settings.bots[player] === "human") { selectedPlayer = player; game.move(player, direction); e.preventDefault(); } } };
+function bindGameInputs() {
+  window.onkeydown = event => {
+    const key = event.key.toLowerCase();
+    if (captureBinding) { controls[captureBinding.player][captureBinding.field] = key; localStorage.setItem("banyan-controls", JSON.stringify(controls)); captureBinding = null; renderShell(); event.preventDefault(); return; }
+    if (!game || screen !== "game") return;
+    if (key === "escape") { openPause(); return; }
+    heldKeys.add(key);
+    for (let player = 0; player < game.players.length; player++) {
+      const control = controls[player];
+      if (settings.bots[player] !== "human") continue;
+      if (key === control.back) { selectedPlayer = player; game.returnHome(player); }
+      if (key === control.reinforce) { selectedPlayer = player; game.reinforce(player); }
+    }
+    event.preventDefault();
+  };
+  window.onkeyup = event => heldKeys.delete(event.key.toLowerCase());
   app.querySelectorAll<HTMLElement>("[data-move]").forEach(b => b.addEventListener("click", () => game?.move(selectedPlayer, Number(b.dataset.move))));
+}
+function moveFromHeldKeys() {
+  if (!game) return;
+  for (let player = 0; player < game.players.length; player++) {
+    if (settings.bots[player] !== "human") continue;
+    const control = controls[player], up = heldKeys.has(control.up), down = heldKeys.has(control.down), left = heldKeys.has(control.left), right = heldKeys.has(control.right);
+    let direction = -1;
+    if (left && up) direction = 2; else if (right && up) direction = 3; else if (left && down) direction = 4; else if (right && down) direction = 5; else if (left) direction = 0; else if (right) direction = 1; else if (up) direction = 2; else if (down) direction = 4;
+    if (direction >= 0) { selectedPlayer = player; game.move(player, direction); }
+  }
 }
 function openPause() { const modal = document.querySelector<HTMLDivElement>("#modal"); if (!modal) return; modal.classList.remove("hidden"); modal.innerHTML = `<section><p class="eyebrow">游戏暂停</p><h2>枝干会在此刻静止</h2><div class="modal-actions">${button("继续生长", "resume", "primary")}${button("重新开始", "restart")}${button("回到主页", "quit")}</div></section>`; modal.querySelectorAll<HTMLElement>("[data-action]").forEach(b => b.addEventListener("click", () => { const a = b.dataset.action; if (a === "resume") modal.classList.add("hidden"); if (a === "restart") { game?.reset(); modal.classList.add("hidden"); } if (a === "quit") { game = null; setScreen("home"); } })); }
 
-function drawLoop(now = performance.now()) { if (screen !== "game" || !game) return; const delta = (now - last) / 1000; last = now; const modal = document.querySelector("#modal"); if (modal?.classList.contains("hidden")) game.update(delta); drawBoard(); updateHud(); requestAnimationFrame(drawLoop); }
+function drawLoop(now = performance.now()) { if (screen !== "game" || !game) return; const delta = (now - last) / 1000; last = now; const modal = document.querySelector("#modal"); if (modal?.classList.contains("hidden")) { moveFromHeldKeys(); game.update(delta); } drawBoard(); updateHud(); requestAnimationFrame(drawLoop); }
 function drawBoard() {
   const canvas = document.querySelector<HTMLCanvasElement>("#board")!; const rect = canvas.getBoundingClientRect(); const ratio = Math.min(devicePixelRatio, 2); const w = Math.floor(rect.width * ratio), h = Math.floor(rect.height * ratio); if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } const ctx = canvas.getContext("2d")!; ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.clearRect(0, 0, rect.width, rect.height); const g = game!; const n = g.settings.size - 1; const scale = Math.min(rect.width / (2 * n + 3), rect.height / (SQRT3 * n + 3)) * .92; const cx = rect.width / 2, cy = rect.height / 2 + 22;
   const pos = (x: number, y: number) => { const p = g.world({ x, y }); return { x: cx + (p.x - n) * scale, y: cy + p.y * scale }; };

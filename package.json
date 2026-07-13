@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "test": "tsx tests/engine.test.ts",
     "preview": "vite preview"
   },
   "devDependencies": {
+    "tsx": "^4.23.1",
     "typescript": "^5.7.3",
     "vite": "^6.1.0"
   }
